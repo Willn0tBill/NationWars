@@ -19,27 +19,47 @@
 <div class="row"><button onclick="createRoom()">Create Game</button><button class="secondary" onclick="showJoin()">Join Game</button></div>
 <div id="joinBox" class="hidden" style="margin-top:16px"><div class="field"><label>Room code</label><input id="room" maxlength="6" placeholder="ABC123"></div><button onclick="joinRoom()">Join Room</button></div>
 </section>
-<section class="panel"><h2>Nation Wars 0.4</h2><p>Build your nation, expand your borders, and outlast rival nations in real-time.</p><div class="notice">Multiplayer is the main mode. Your browser connects to the Nation Wars game server through WebSockets.</div><p class="small" style="margin-top:14px">Server: <span id="serverLabel">automatic</span></p></section>
+<section class="panel"><h2>Nation Wars 0.4</h2><p>Build your nation, expand your borders, and outlast rival nations in real-time.</p><div id="connectionNotice" class="notice">Connecting to the Nation Wars multiplayer server...</div><p class="small" style="margin-top:14px">Server: <span id="serverLabel">loading</span></p></section>
 </div>
 <div id="lobby" class="hidden panel"><h2>War Room <span id="code" class="code"></span></h2><p id="lobbyStatus" class="status">Waiting for players...</p><div class="row"><button id="readyBtn" onclick="toggleReady()">Ready Up</button><button class="secondary" onclick="leaveRoom()">Leave</button></div><div id="players" class="players"></div></div>
 <div id="game" class="hidden"><div class="stats"><span>Time: <b id="time">0:00</b></span><span>Territory: <b id="territory">0</b></span><span>Troops: <b id="troops">0</b></span></div><div class="panel"><div id="gameStatus" class="status">Select one of your territories, then select an adjacent territory.</div><div id="mapGrid" class="map"></div></div></div>
 </div>
 <script>
-const qs=new URLSearchParams(location.search);const configured=window.NW_SERVER_URL||qs.get('server');let socket=null,myId=null,roomCode=null,ready=false,roomPlayers=[],gameState=null,selected=null;
-function serverUrl(){if(configured)return configured;const host=location.hostname||'localhost';return location.protocol==='https:'?'wss://'+host+'/ws':'ws://'+host+':3000'}
-function connect(){if(socket&&socket.readyState<=1)return;socket=new WebSocket(serverUrl());document.getElementById('serverLabel').textContent=serverUrl();socket.onopen=()=>status('Connected to server.');socket.onclose=()=>status('Disconnected from server.',true);socket.onerror=()=>status('Could not connect to the multiplayer server.',true);socket.onmessage=e=>handle(JSON.parse(e.data))}
-function send(x){if(!socket||socket.readyState!==1){connect();return}socket.send(JSON.stringify(x))}
-function status(t,error=false){const el=document.getElementById('lobbyStatus');if(el)el.textContent=t;const gs=document.getElementById('gameStatus');if(gs)gs.textContent=t;if(error){(el||gs).classList.add('error')}}
-function createRoom(){connect();setTimeout(()=>send({type:'create',name:document.getElementById('name').value,settings:{mapSize:+document.getElementById('map').value,gameLength:+document.getElementById('length').value}}),100)}
+const qs=new URLSearchParams(location.search);
+const configured=window.NW_SERVER_URL||qs.get('server');
+const DEFAULT_SERVER='wss://nation-wars-server-willn0tbill.onrender.com';
+let socket=null,myId=null,roomCode=null,ready=false,roomPlayers=[],gameState=null,selected=null,pendingMessage=null;
+function serverUrl(){return configured||DEFAULT_SERVER}
+function connect(){
+  if(socket&&(socket.readyState===WebSocket.OPEN||socket.readyState===WebSocket.CONNECTING))return;
+  const url=serverUrl();document.getElementById('serverLabel').textContent=url;
+  socket=new WebSocket(url);
+  socket.onopen=()=>{setConnection('Connected to the multiplayer server.');if(pendingMessage){socket.send(JSON.stringify(pendingMessage));pendingMessage=null;}};
+  socket.onclose=()=>setConnection('Server connection closed. Try again in a moment.',true);
+  socket.onerror=()=>setConnection('Could not connect to the multiplayer server.',true);
+  socket.onmessage=e=>{try{handle(JSON.parse(e.data))}catch{status('Received an invalid server message.',true)}};
+}
+function setConnection(t,error=false){const el=document.getElementById('connectionNotice');el.textContent=t;el.classList.toggle('error',error)}
+function send(x){if(!socket||socket.readyState!==WebSocket.OPEN){pendingMessage=x;connect();return}socket.send(JSON.stringify(x))}
+function status(t,error=false){const el=document.getElementById('lobbyStatus');if(el)el.textContent=t;const gs=document.getElementById('gameStatus');if(gs)gs.textContent=t;if(error){if(el)el.classList.add('error');if(gs)gs.classList.add('error')}}
+function createRoom(){send({type:'create',name:document.getElementById('name').value,settings:{mapSize:+document.getElementById('map').value,gameLength:+document.getElementById('length').value}})}
 function showJoin(){document.getElementById('joinBox').classList.remove('hidden')}
-function joinRoom(){connect();setTimeout(()=>send({type:'join',name:document.getElementById('name').value,room:document.getElementById('room').value.trim()}),100)}
+function joinRoom(){send({type:'join',name:document.getElementById('name').value,room:document.getElementById('room').value.trim()})}
 function toggleReady(){ready=!ready;send({type:'ready',ready});document.getElementById('readyBtn').textContent=ready?'Not Ready':'Ready Up'}
-function leaveRoom(){location.reload()}
-function handle(m){if(m.type==='error'){status(m.message,true);return}if(m.type==='created'||m.type==='joined'){myId=m.you;roomCode=m.room;document.getElementById('setup').classList.add('hidden');document.getElementById('lobby').classList.remove('hidden');document.getElementById('code').textContent=roomCode;return}if(m.type==='lobby'){roomPlayers=m.players;renderLobby(m);return}if(m.type==='start'){roomPlayers=m.players;gameState=m.state;document.getElementById('lobby').classList.add('hidden');document.getElementById('game').classList.remove('hidden');render();return}if(m.type==='state'){gameState=m.state;render();return}if(m.type==='gameOver'){gameState=m.final;render();const winner=roomPlayers.find(p=>p.id===m.winner);status(winner?winner.name+' won the war.':'The time limit ended.');}}
+function leaveRoom(){if(socket&&socket.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'leave'}));location.reload()}
+function handle(m){
+  if(m.type==='error'){status(m.message,true);return}
+  if(m.type==='created'||m.type==='joined'){myId=m.you;roomCode=m.room;document.getElementById('setup').classList.add('hidden');document.getElementById('lobby').classList.remove('hidden');document.getElementById('code').textContent=roomCode;return}
+  if(m.type==='lobby'){roomPlayers=m.players;renderLobby(m);return}
+  if(m.type==='start'){roomPlayers=m.players;gameState=m.state;document.getElementById('lobby').classList.add('hidden');document.getElementById('game').classList.remove('hidden');render();return}
+  if(m.type==='state'){gameState=m.state;roomPlayers=m.state.players||roomPlayers;render();return}
+  if(m.type==='gameOver'){gameState=m.final;roomPlayers=m.final.players||roomPlayers;render();const winner=roomPlayers.find(p=>p.id===m.winner);status(winner?winner.name+' won the war.':'The time limit ended.');}
+}
 function renderLobby(m){document.getElementById('lobbyStatus').textContent=`${m.players.length}/16 nations in the room`;document.getElementById('players').innerHTML=m.players.map(p=>`<div class="player"><span class="dot" style="background:${p.color}"></span><b>${escapeHtml(p.name)}</b><div class="small">${p.host?'Host · ':''}${p.ready?'Ready':'Not ready'}${p.connected?'':' · Disconnected'}</div></div>`).join('')}
 function render(){if(!gameState)return;const tiles=gameState.tiles,size=Math.sqrt(Object.keys(tiles).length);const grid=document.getElementById('mapGrid');grid.style.gridTemplateColumns=`repeat(${size},minmax(34px,1fr))`;let my=0,tr=0;for(const t of Object.values(tiles)){if(t.owner===myId){my++;tr+=t.troops}}document.getElementById('territory').textContent=my;document.getElementById('troops').textContent=tr;document.getElementById('time').textContent=Math.floor(gameState.time/60)+':'+String(gameState.time%60).padStart(2,'0');grid.innerHTML='';for(let r=0;r<size;r++)for(let c=0;c<size;c++){const id=`${r}-${c}`,t=tiles[id],b=document.createElement('button');b.className='tile'+(t.owner===myId?' mine':'');b.style.background=t.owner?(roomPlayers.find(p=>p.id===t.owner)?.color||'#555'):'#132236';b.innerHTML=`<span>${t.troops}</span>`;b.title=`${id} · ${t.troops} troops`;b.onclick=()=>tileClick(id);grid.appendChild(b)}}
-function tileClick(id){if(!gameState)return;if(!selected){if(gameState.tiles[id]?.owner===myId){selected=id;status('Territory selected. Choose an adjacent territory.');render()}return}if(id===selected){selected=null;render();return}const size=Math.sqrt(Object.keys(gameState.tiles).length);const [r,c]=selected.split('-').map(Number),[rr,cc]=id.split('-').map(Number);const even=r%2===0;const ok=(even?[[0,-1],[0,1],[-1,-1],[-1,0],[1,-1],[1,0]]:[ [0,-1],[0,1],[-1,0],[-1,1],[1,0],[1,1]]).some(([dr,dc])=>r+dr===rr&&c+dc===cc);if(!ok){status('That territory is not adjacent.');return}const amount=Math.max(1,Math.floor((gameState.tiles[selected]?.troops||0)*.5));send({type:'action',from:selected,to:id,amount});selected=null}
-function escapeHtml(s){return String(s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]))}connect();
+function tileClick(id){if(!gameState)return;if(!selected){if(gameState.tiles[id]?.owner===myId){selected=id;status('Territory selected. Choose an adjacent territory.');render()}return}if(id===selected){selected=null;render();return}const [r,c]=selected.split('-').map(Number),[rr,cc]=id.split('-').map(Number);const even=r%2===0;const ok=(even?[[0,-1],[0,1],[-1,-1],[-1,0],[1,-1],[1,0]]:[ [0,-1],[0,1],[-1,0],[-1,1],[1,0],[1,1]]).some(([dr,dc])=>r+dr===rr&&c+dc===cc);if(!ok){status('That territory is not adjacent.');return}const amount=Math.max(1,Math.floor((gameState.tiles[selected]?.troops||0)*.5));send({type:'action',from:selected,to:id,amount});selected=null}
+function escapeHtml(s){return String(s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]))}
+connect();
 </script>
 </body>
 </html>
