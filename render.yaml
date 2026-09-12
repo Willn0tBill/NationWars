@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: nation-wars-server-willn0tbill
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
