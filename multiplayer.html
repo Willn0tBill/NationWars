@@ -27,7 +27,7 @@
 <script>
 const qs=new URLSearchParams(location.search);
 const configured=window.NW_SERVER_URL||qs.get('server');
-const DEFAULT_SERVER='wss://nation-wars-server-willn0tbill.onrender.com';
+const DEFAULT_SERVER='wss://nationwars.onrender.com/ws';
 let socket=null,myId=null,roomCode=null,ready=false,roomPlayers=[],gameState=null,selected=null,pendingMessage=null;
 function serverUrl(){return configured||DEFAULT_SERVER}
 function connect(){
