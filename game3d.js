@@ -1,163 +1,32 @@
-(() => {
-'use strict';
-
-const mount = document.getElementById('game');
-const loading = document.getElementById('loading');
-if (!mount || !window.THREE) { if (loading) loading.textContent = '3D engine failed to load. Refresh the page.'; return; }
-
-const T = THREE;
-let scene, camera, renderer, raycaster, mouse;
-let terrain, gridGroup, unitsGroup, citiesGroup, selectedUnit = null;
-let gold = 1000, food = 800, science = 0, territory = 0;
-let armies = [], cities = [], selectedTile = null;
-let dragging = false, lastX = 0, lastY = 0;
-let cameraYaw = 0, cameraDistance = 34, cameraHeight = 30;
-const MAP = 24, HALF = MAP / 2, TILE = 2.5;
-const playerColor = 0x4da6ff, enemyColor = 0xef6262, neutralColor = 0x64748b;
-
-function $(id){ return document.getElementById(id); }
-function rand(min,max){ return min + Math.random()*(max-min); }
-function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
-
+(()=>{'use strict';
+const $=id=>document.getElementById(id),mount=$('game'),loading=$('loading');
+function fail(t){if(loading){loading.textContent=t;loading.classList.remove('hidden')}}
+function start(){if(!window.THREE){fail('The 3D engine could not load. Check your connection and refresh.');return}try{boot()}catch(e){console.error(e);fail('3D game failed to start. Refresh the page.')}}
+if(!window.THREE){fail('Loading 3D engine…');const s=document.createElement('script');s.src='https://unpkg.com/three@0.160.0/build/three.min.js';s.onload=start;s.onerror=start;document.head.appendChild(s)}else start();
 function boot(){
-  scene = new T.Scene();
-  scene.background = new T.Color(0x07111d);
-  scene.fog = new T.Fog(0x07111d, 42, 100);
-  camera = new T.PerspectiveCamera(48, innerWidth/innerHeight, .1, 150);
-  renderer = new T.WebGLRenderer({antialias:false,powerPreference:'high-performance'});
-  renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
-  renderer.setSize(innerWidth,innerHeight);
-  renderer.outputColorSpace = T.SRGBColorSpace;
-  mount.appendChild(renderer.domElement);
-  raycaster = new T.Raycaster(); mouse = new T.Vector2();
-
-  const hemi = new T.HemisphereLight(0xb8d7ff,0x182313,2.2); scene.add(hemi);
-  const sun = new T.DirectionalLight(0xffffff,2.4); sun.position.set(15,30,10); scene.add(sun);
-
-  buildTerrain();
-  buildGrid();
-  unitsGroup = new T.Group(); citiesGroup = new T.Group(); scene.add(unitsGroup,citiesGroup);
-  spawnWorld();
-  updateCamera(); updateHUD();
-  addEvents();
-  loading.classList.add('hidden');
-  animate();
+ if(!mount)throw Error('Missing game element');const T=THREE;let scene=new T.Scene(),camera=new T.PerspectiveCamera(50,innerWidth/innerHeight,.1,180),renderer=new T.WebGLRenderer({antialias:false,powerPreference:'high-performance'}),ray=new T.Raycaster(),mouse=new T.Vector2();
+ scene.background=new T.Color(0x07111d);scene.fog=new T.Fog(0x07111d,48,105);renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.35));renderer.setSize(innerWidth,innerHeight);renderer.outputColorSpace=T.SRGBColorSpace;renderer.domElement.style.touchAction='none';mount.replaceChildren(renderer.domElement);
+ scene.add(new T.HemisphereLight(0xb8d7ff,0x172313,2.1));let sun=new T.DirectionalLight(0xffffff,2.7);sun.position.set(18,34,12);scene.add(sun);
+ const MAP=24,H=MAP/2,TILE=2.5,PC=0x4da6ff,EC=0xef6262;let armies=[],selected=null,territory=4,gold=1000,food=800,science=0,drag=false,lx=0,ly=0,yaw=.15,pitch=.78,dist=34;
+ const terrain=new T.Mesh(new T.PlaneGeometry(MAP*TILE,MAP*TILE),new T.MeshLambertMaterial({color:0x21452f}));terrain.rotation.x=-Math.PI/2;terrain.userData.ground=true;scene.add(terrain);
+ let water=new T.Mesh(new T.PlaneGeometry(125,125),new T.MeshBasicMaterial({color:0x0a2335}));water.rotation.x=-Math.PI/2;water.position.y=-.22;scene.add(water);
+ let grid=new T.GridHelper(MAP*TILE,MAP,0x557b62,0x365342);grid.position.y=.025;grid.material.transparent=true;grid.material.opacity=.48;scene.add(grid);let units=new T.Group(),cities=new T.Group();scene.add(units,cities);
+ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),rand=(a,b)=>a+Math.random()*(b-a),pos=(x,z)=>new T.Vector3((x-H+.5)*TILE,0,(z-H+.5)*TILE);
+ function ring(color){let r=new T.Mesh(new T.RingGeometry(.72,.9,24),new T.MeshBasicMaterial({color,transparent:true,opacity:.95,side:T.DoubleSide}));r.rotation.x=-Math.PI/2;r.position.y=.16;r.name='selection';r.visible=false;return r}
+ function army(owner,x,z,count){let g=new T.Group();g.position.copy(pos(x,z));g.userData={owner,x,z,count};let b=new T.Mesh(new T.CylinderGeometry(.58,.72,.2,8),new T.MeshStandardMaterial({color:owner==='player'?PC:EC}));b.position.y=.2;b.userData.army=g;g.add(b);for(let i=0;i<Math.min(10,Math.max(3,Math.ceil(count/10)));i++){let u=new T.Mesh(new T.BoxGeometry(.24,.72,.24),new T.MeshStandardMaterial({color:owner==='player'?0xd9edff:0xffd7d7}));u.position.set(rand(-.42,.42),.57,rand(-.42,.42));u.userData.army=g;g.add(u)}let pole=new T.Mesh(new T.CylinderGeometry(.035,.035,.9,6),new T.MeshStandardMaterial({color:0xd5dde5}));pole.position.y=.85;pole.userData.army=g;g.add(pole);let f=new T.Mesh(new T.PlaneGeometry(.38,.24),new T.MeshBasicMaterial({color:owner==='player'?PC:EC,side:T.DoubleSide}));f.position.set(.18,1.05,0);f.userData.army=g;g.add(f);g.add(ring(owner==='player'?0x72c5ff:0xff7474));units.add(g);armies.push(g);return g}
+ function city(owner,x,z){let g=new T.Group();g.position.copy(pos(x,z));let base=new T.Mesh(new T.BoxGeometry(1.7,.25,1.7),new T.MeshStandardMaterial({color:owner==='player'?0x315f8c:owner==='enemy'?0x6b3434:0x4e5966}));base.position.y=.13;g.add(base);for(let i=0;i<4;i++){let h=rand(.8,1.5),b=new T.Mesh(new T.BoxGeometry(.42,h,.42),new T.MeshStandardMaterial({color:owner==='player'?0x8fb9d8:owner==='enemy'?0xb97878:0xaeb7c0}));b.position.set(i%2?.48:-.48,h/2+.22,i<2?-.42:.42);g.add(b);let roof=new T.Mesh(new T.ConeGeometry(.31,.32,4),new T.MeshStandardMaterial({color:0x303945}));roof.position.set(b.position.x,h+.39,b.position.z);roof.rotation.y=Math.PI/4;g.add(roof)}cities.add(g)}
+ city('player',3,19);army('player',4,18,80);army('player',6,19,55);city('enemy',19,4);army('enemy',18,5,75);army('enemy',20,6,50);army('enemy',17,3,40);city('neutral',11,11);
+ function cam(){let h=Math.cos(pitch)*dist;camera.position.set(Math.sin(yaw)*h,Math.sin(pitch)*dist,Math.cos(yaw)*h);camera.lookAt(0,0,0)}
+ function hud(){ $('gold').textContent=Math.floor(gold).toLocaleString();$('food').textContent=Math.floor(food).toLocaleString();$('science').textContent=Math.floor(science).toLocaleString();$('territory').textContent=territory;$('troops').textContent=armies.filter(a=>a.userData.owner==='player').reduce((s,a)=>s+a.userData.count,0).toLocaleString();$('selection').textContent=selected?`Selected army · ${selected.userData.count} troops · Position ${selected.userData.x+1}, ${selected.userData.z+1}`:'No army selected.'}
+ function hits(e){let r=renderer.domElement.getBoundingClientRect();mouse.x=(e.clientX-r.left)/r.width*2-1;mouse.y=-(e.clientY-r.top)/r.height*2+1;ray.setFromCamera(mouse,camera);return ray.intersectObjects(scene.children,true)}
+ function choose(e){if(drag)return;for(let h of hits(e)){if(h.object.userData.army){let a=h.object.userData.army;if(a.userData.owner==='player'){if(selected){let r=selected.getObjectByName('selection');if(r)r.visible=false}selected=a;let r=a.getObjectByName('selection');if(r)r.visible=true;$('orders').textContent='Right-click an adjacent tile to move or an enemy army to attack.';hud()}return} }if(selected){let r=selected.getObjectByName('selection');if(r)r.visible=false}selected=null;hud()}
+ function move(a,x,z){if(Math.abs(a.userData.x-x)+Math.abs(a.userData.z-z)!==1){$('orders').textContent='Move one tile at a time in this practice build.';return}if(armies.some(q=>q!==a&&q.userData.owner==='player'&&q.userData.x===x&&q.userData.z===z)){ $('orders').textContent='Another friendly army is already there.';return}let from=a.position.clone(),to=pos(x,z),t0=performance.now();function step(n){let t=clamp((n-t0)/420,0,1),e=t*t*(3-2*t);a.position.lerpVectors(from,to,e);a.position.y=Math.sin(e*Math.PI)*.18;if(t<1)requestAnimationFrame(step);else{a.position.y=0;a.userData.x=x;a.userData.z=z;$('orders').textContent='Army moved.';hud()}}requestAnimationFrame(step)}
+ function combat(a,d){if(Math.abs(a.userData.x-d.userData.x)+Math.abs(a.userData.z-d.userData.z)!==1){$('orders').textContent='That enemy is too far away.';return}let p=a.userData.count,def=d.userData.count;a.userData.count=Math.max(0,p-Math.max(1,Math.floor(def*.22)));d.userData.count=Math.max(0,def-Math.max(1,Math.floor(p*.38)));if(d.userData.count===0&&a.userData.count>0){d.userData.owner='player';d.userData.count=Math.max(1,Math.floor(a.userData.count*.25));territory++;$('orders').textContent='Victory! Enemy army captured.'}else $('orders').textContent='Battle complete. Both armies took losses.';visual(a);visual(d);hud()}
+ function visual(a){let c=a.userData.owner==='player'?PC:EC,b=a.children[0];b.material.color.set(c);let f=a.children.find(q=>q.geometry&&q.geometry.type==='PlaneGeometry');if(f)f.material.color.set(c);let r=a.getObjectByName('selection');if(r)r.material.color.set(a.userData.owner==='player'?0x72c5ff:0xff7474)}
+ function context(e){e.preventDefault();if(!selected)return;for(let h of hits(e)){if(h.object.userData.army){let a=h.object.userData.army;if(a.userData.owner==='enemy')combat(selected,a);return}if(h.object.userData.ground){let x=clamp(Math.floor(h.point.x/TILE+H),0,MAP-1),z=clamp(Math.floor(h.point.z/TILE+H),0,MAP-1);move(selected,x,z);return}}}
+ renderer.domElement.addEventListener('click',choose);renderer.domElement.addEventListener('contextmenu',context);
+ renderer.domElement.addEventListener('pointerdown',e=>{if(e.button===1||(e.button===0&&e.shiftKey)){drag=false;lx=e.clientX;ly=e.clientY;renderer.domElement.setPointerCapture?.(e.pointerId)}});
+ renderer.domElement.addEventListener('pointermove',e=>{if((e.buttons&4)||(e.buttons&1&&e.shiftKey)){let dx=e.clientX-lx,dy=e.clientY-ly;if(Math.abs(dx)+Math.abs(dy)>3)drag=true;yaw-=dx*.006;pitch=clamp(pitch+dy*.004,.48,1.18);cam();lx=e.clientX;ly=e.clientY}});
+ renderer.domElement.addEventListener('wheel',e=>{dist=clamp(dist+e.deltaY*.025,17,58);cam()},{passive:true});$('reset').onclick=()=>location.reload();$('split').onclick=()=>{if(!selected||selected.userData.count<20){$('orders').textContent='Select an army with at least 20 troops.';return}let half=Math.floor(selected.userData.count/2);selected.userData.count-=half;let x=clamp(selected.userData.x+1,0,MAP-1);if(!armies.some(a=>a.userData.x===x&&a.userData.z===selected.userData.z))army('player',x,selected.userData.z,half);hud()};addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});addEventListener('keydown',e=>{if(e.key.toLowerCase()==='r')location.reload()});cam();hud();loading.classList.add('hidden');let last=performance.now();function loop(n=performance.now()){requestAnimationFrame(loop);if(n-last>1000){last=n;gold+=18;food+=12;science+=2;armies.filter(a=>a.userData.owner==='player').forEach(a=>a.userData.count+=2);hud()}renderer.render(scene,camera)}loop()
 }
-
-function buildTerrain(){
-  const geo = new T.PlaneGeometry(MAP*TILE,MAP*TILE,MAP,MAP);
-  const mat = new T.MeshLambertMaterial({color:0x1b3a2a,roughness:.9});
-  terrain = new T.Mesh(geo,mat); terrain.rotation.x=-Math.PI/2; terrain.name='ground'; scene.add(terrain);
-  const water = new T.Mesh(new T.PlaneGeometry(120,120),new T.MeshBasicMaterial({color:0x0a2335}));
-  water.rotation.x=-Math.PI/2; water.position.y=-.18; scene.add(water);
-}
-function buildGrid(){
-  gridGroup=new T.Group();
-  const lineMat=new T.LineBasicMaterial({color:0x496d55,transparent:true,opacity:.3});
-  for(let i=0;i<=MAP;i++){
-    const x=-HALF*TILE+i*TILE;
-    const g1=new T.BufferGeometry().setFromPoints([new T.Vector3(x,.02,-HALF*TILE),new T.Vector3(x,.02,HALF*TILE)]);
-    const g2=new T.BufferGeometry().setFromPoints([new T.Vector3(-HALF*TILE,.02,x),new T.Vector3(HALF*TILE,.02,x)]);
-    gridGroup.add(new T.Line(g1,lineMat),new T.Line(g2,lineMat));
-  }
-  scene.add(gridGroup);
-}
-function tilePos(x,z){ return new T.Vector3((x-HALF+.5)*TILE,0,(z-HALF+.5)*TILE); }
-function makeTileHighlight(color=0x55b7ff){
-  const m=new T.Mesh(new T.BoxGeometry(TILE*.94,.06,TILE*.94),new T.MeshBasicMaterial({color,transparent:true,opacity:.2})); m.position.y=.05; return m;
-}
-function makeArmy(owner,x,z,count){
-  const group=new T.Group(); const p=tilePos(x,z); group.position.copy(p); group.userData={owner,x,z,count,id:Math.random().toString(36).slice(2)};
-  const base=new T.Mesh(new T.CylinderGeometry(.62,.72,.18,8),new T.MeshStandardMaterial({color:owner==='player'?playerColor:enemyColor,roughness:.75})); base.position.y=.18; group.add(base);
-  for(let i=0;i<Math.min(9,Math.max(3,Math.ceil(count/12)));i++){
-    const soldier=new T.Mesh(new T.BoxGeometry(.23,.7,.23),new T.MeshStandardMaterial({color:owner==='player'?0xd8ecff:0xffd7d7}));
-    soldier.position.set(rand(-.42,.42),.55,rand(-.42,.42)); soldier.rotation.y=rand(0,Math.PI*2); group.add(soldier);
-  }
-  const flag=new T.Mesh(new T.ConeGeometry(.18,.45,5),new T.MeshStandardMaterial({color:owner==='player'?playerColor:enemyColor})); flag.position.set(0,1.05,0); group.add(flag);
-  const ring=makeTileHighlight(owner==='player'?0x55b7ff:0xef6262); ring.visible=false; ring.name='selection'; group.add(ring);
-  group.traverse(o=>{o.userData.army=group;}); unitsGroup.add(group); armies.push(group); return group;
-}
-function makeCity(owner,x,z,name){
-  const group=new T.Group(); group.position.copy(tilePos(x,z)); group.userData={owner,x,z,name};
-  const base=new T.Mesh(new T.BoxGeometry(1.5,.25,1.5),new T.MeshStandardMaterial({color:owner==='player'?0x315f8c:0x6b3434})); base.position.y=.13; group.add(base);
-  for(let i=0;i<3;i++){
-    const b=new T.Mesh(new T.BoxGeometry(.45,rand(.8,1.5),.45),new T.MeshStandardMaterial({color:owner==='player'?0x8fb9d8:0xb97878})); b.position.set((i-1)*.48,.55,(i%2)*.45-.2); group.add(b);
-    const roof=new T.Mesh(new T.ConeGeometry(.34,.35,4),new T.MeshStandardMaterial({color:0x2d3440})); roof.position.set(b.position.x,b.position.y+b.geometry.parameters.height/2+.17,b.position.z); roof.rotation.y=Math.PI/4; group.add(roof);
-  }
-  const marker=makeTileHighlight(owner==='player'?0x3b82f6:0xdc4a4a); marker.position.y=.01; marker.material.opacity=.09; group.add(marker); citiesGroup.add(group); cities.push(group);
-}
-function spawnWorld(){
-  // Player starting army and city
-  makeCity('player',3,19,'Capital'); makeArmy('player',4,18,80); makeArmy('player',6,19,55);
-  // Enemy armies and cities
-  makeCity('enemy',19,4,'Redhaven'); makeArmy('enemy',18,5,75); makeArmy('enemy',20,6,50); makeArmy('enemy',17,3,40);
-  makeCity('neutral',11,11,'Free City');
-  territory=4;
-}
-function clearSelection(){ if(selectedUnit){selectedUnit.getObjectByName('selection').visible=false;} selectedUnit=null; selectedTile=null; updateHUD(); }
-function selectArmy(a){ if(selectedUnit) selectedUnit.getObjectByName('selection').visible=false; selectedUnit=a; a.getObjectByName('selection').visible=true; selectedTile={x:a.userData.x,z:a.userData.z}; updateHUD(); }
-function moveArmy(a,x,z){
-  if(a.userData.owner!=='player') return;
-  const p=tilePos(x,z); const start=a.position.clone(); const target=p.clone();
-  const duration=500; const t0=performance.now();
-  function step(now){ const t=clamp((now-t0)/duration,0,1); const e=t*t*(3-2*t); a.position.lerpVectors(start,target,e); a.position.y=Math.sin(e*Math.PI)*.18; if(t<1) requestAnimationFrame(step); else {a.position.y=0; a.userData.x=x;a.userData.z=z; selectedTile={x,z}; updateHUD();} }
-  requestAnimationFrame(step);
-  $('orders').textContent='Army moving to the selected position.';
-}
-function attack(a,target){
-  if(a.userData.owner!=='player' || target.userData.owner==='player') return;
-  const power=a.userData.count, defense=target.userData.count;
-  a.userData.count=Math.max(0,Math.floor(power*.18));
-  target.userData.count=Math.max(0,Math.floor(defense*.72));
-  if(a.userData.count>target.userData.count){ target.userData.owner='player'; a.userData.count+=target.userData.count; target.userData.count=0; territory+=2; $('orders').textContent='Victory! Enemy territory captured.'; target.children.forEach(c=>{if(c.material)c.material.color.set(c===target.children[0]?playerColor:0xd8ecff);}); }
-  else { $('orders').textContent='Attack failed. Your army took heavy losses.'; }
-  updateArmyVisual(a); updateArmyVisual(target); updateHUD();
-}
-function updateArmyVisual(a){
-  const color=a.userData.owner==='player'?playerColor:enemyColor;
-  a.children[0].material.color.set(color); a.children[a.children.length-2]?.material?.color?.set(color);
-  a.children.forEach(c=>{if(c.userData.army===a && c.name==='selection'){} });
-}
-function nearestEnemy(x,z){ let best=null,dist=Infinity; armies.forEach(a=>{if(a.userData.owner==='enemy'){const d=Math.abs(a.userData.x-x)+Math.abs(a.userData.z-z);if(d<dist){dist=d;best=a;}}});return dist<=1?best:null; }
-function pointFromEvent(e){ const r=renderer.domElement.getBoundingClientRect(); mouse.x=((e.clientX-r.left)/r.width)*2-1; mouse.y=-((e.clientY-r.top)/r.height)*2+1; raycaster.setFromCamera(mouse,camera); return raycaster.intersectObjects(scene.children,true); }
-function handleClick(e){
-  if(dragging) return;
-  const hits=pointFromEvent(e); let army=null;
-  for(const h of hits){if(h.object.userData.army){army=h.object.userData.army;break;}}
-  if(army){selectArmy(army);return;}
-  clearSelection();
-}
-function handleContext(e){
-  e.preventDefault(); if(!selectedUnit || selectedUnit.userData.owner!=='player') return;
-  const hits=pointFromEvent(e); let enemy=null; let ground=null;
-  for(const h of hits){if(h.object.userData.army?.userData.owner==='enemy'){enemy=h.object.userData.army;break;} if(h.object===terrain) ground=h.point;}
-  if(enemy){attack(selectedUnit,enemy);return;}
-  if(ground){const x=clamp(Math.floor(ground.x/TILE+HALF),0,MAP-1),z=clamp(Math.floor(ground.z/TILE+HALF),0,MAP-1);moveArmy(selectedUnit,x,z);}
-}
-function updateCamera(){
-  const target=new T.Vector3(0,0,0); camera.position.set(Math.sin(cameraYaw)*cameraDistance,cameraHeight,Math.cos(cameraYaw)*cameraDistance); camera.lookAt(target);
-}
-function addEvents(){
-  renderer.domElement.addEventListener('click',handleClick);
-  renderer.domElement.addEventListener('contextmenu',handleContext);
-  renderer.domElement.addEventListener('pointerdown',e=>{dragging=false;lastX=e.clientX;lastY=e.clientY;});
-  renderer.domElement.addEventListener('pointermove',e=>{if(e.buttons===1){const dx=e.clientX-lastX,dy=e.clientY-lastY;if(Math.abs(dx)+Math.abs(dy)>4)dragging=true;cameraYaw-=dx*.005;cameraHeight=clamp(cameraHeight+dy*.08,16,55);updateCamera();lastX=e.clientX;lastY=e.clientY;}});
-  renderer.domElement.addEventListener('wheel',e=>{cameraDistance=clamp(cameraDistance+e.deltaY*.025,18,55);cameraHeight=clamp(cameraDistance*.9,16,55);updateCamera();},{passive:true});
-  $('reset').addEventListener('click',()=>location.reload());
-  $('split').addEventListener('click',()=>{if(!selectedUnit||selectedUnit.userData.count<20){$('orders').textContent='Select an army with at least 20 troops.';return;}const a=selectedUnit;const half=Math.floor(a.userData.count/2);a.userData.count-=half;makeArmy('player',clamp(a.userData.x+1,0,MAP-1),a.userData.z,half);updateArmyVisual(a);updateHUD();$('orders').textContent='Army split successfully.';});
-  addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
-  addEventListener('keydown',e=>{if(e.key.toLowerCase()==='r')location.reload();});
-}
-function updateHUD(){
-  $('gold').textContent=Math.floor(gold).toLocaleString();$('food').textContent=Math.floor(food).toLocaleString();$('science').textContent=Math.floor(science).toLocaleString();
-  const troops=armies.filter(a=>a.userData.owner==='player').reduce((s,a)=>s+a.userData.count,0);$('troops').textContent=troops.toLocaleString();$('territory').textContent=territory;
-  $('selection').textContent=selectedUnit?`Selected army · ${selectedUnit.userData.count} troops · Position ${selectedUnit.userData.x+1}, ${selectedUnit.userData.z+1}`:'No army selected.';
-}
-let lastTick=performance.now();
-function tick(now){
-  if(now-lastTick>1000){lastTick=now;gold+=18;food+=12;science+=2;armies.filter(a=>a.userData.owner==='player').forEach(a=>{a.userData.count+=2;updateArmyVisual(a);});updateHUD();}
-}
-function animate(now=performance.now()){requestAnimationFrame(animate);tick(now);renderer.render(scene,camera);}
-
-try{boot();}catch(err){console.error(err);loading.classList.remove('hidden');loading.textContent='3D game failed to start. Refresh the page.';}
 })();
