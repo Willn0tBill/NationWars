@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nation Wars — 3D Practice</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07111d;color:#eef6ff;font-family:Inter,system-ui,sans-serif}#game{position:fixed;inset:0}canvas{display:block}.hud{position:fixed;inset:0;pointer-events:none}.top{position:absolute;top:14px;left:14px;right:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.brand,.stat,.panel{background:rgba(7,17,29,.88);border:1px solid rgba(120,170,210,.3);box-shadow:0 10px 30px #0005;backdrop-filter:blur(8px);border-radius:12px}.brand{padding:10px 14px;font-weight:900;letter-spacing:.08em}.brand span{color:#55b7ff}.stat{padding:9px 12px;font-size:13px}.stat b{color:#fff}.side{position:absolute;right:14px;top:78px;width:250px;padding:15px;pointer-events:auto}.panel h2{font-size:15px;margin:0 0 9px}.panel p{font-size:13px;color:#a9c4df;line-height:1.5;margin:7px 0}.btn{width:100%;border:0;border-radius:9px;padding:10px;margin-top:7px;background:#267bc1;color:white;font-weight:800;cursor:pointer}.btn:hover{filter:brightness(1.12)}.btn.secondary{background:#193149}.bottom{position:absolute;left:14px;bottom:14px;max-width:430px;padding:11px 14px;color:#b9d1e8;font-size:12px}.selected{color:#72c5ff}.loading{position:fixed;inset:0;display:grid;place-items:center;background:#07111d;z-index:5;font-weight:800}.hidden{display:none!important}@media(max-width:700px){.side{left:14px;right:14px;top:auto;bottom:60px;width:auto}.top{right:8px}.bottom{display:none}}
+</style>
+</head>
+<body>
+<div id="loading" class="loading">Loading Nation Wars 3D…</div>
+<div id="game"></div>
+<div class="hud">
+<div class="top"><div class="brand">NATION <span>WARS</span> 3D</div><div class="stat">Gold <b id="gold">1,000</b></div><div class="stat">Food <b id="food">800</b></div><div class="stat">Science <b id="science">0</b></div><div class="stat">Troops <b id="troops">0</b></div><div class="stat">Territory <b id="territory">0</b></div></div>
+<div class="side panel"><h2>Army Command</h2><p id="selection">No army selected.</p><p id="orders">Click an army to select it. Right-click the ground to move.</p><button class="btn" id="split">Split Army</button><button class="btn secondary" id="reset">Restart Battle</button><a class="btn secondary" href="index.html" style="display:block;text-align:center;text-decoration:none">Back to Nation Wars</a></div>
+<div class="bottom panel"><span class="selected">Controls:</span> Left click army = select · Right click = move · Wheel = zoom · Drag = pan · <b>R</b> = restart</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="game3d.js"></script>
+</body>
+</html>
