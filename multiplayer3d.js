@@ -66,8 +66,9 @@ function createWorld(size){
   world={size,ids,tileMesh,platform,bodies,heads,towers,ring,objects:[...decorations,tileMesh,platform,bodies,heads,towers,ring]};
   return world;
 }
-const tmp=new T.Object3D(),ownedColor=new T.Color(),uniformColor=new T.Color(),skyColor=new T.Color(0xe0e8df);
+let tmp=null;const skyHex=0xe0e8df;
 function pose(inst,i,x,y,z,scale=1){
+  if(!tmp)tmp=new T.Object3D();
   tmp.position.set(x,y,z);tmp.rotation.set(0,0,0);
   tmp.scale.setScalar(scale);
   tmp.updateMatrix();inst.setMatrixAt(i,tmp.matrix);
@@ -75,7 +76,7 @@ function pose(inst,i,x,y,z,scale=1){
 function draw(){
   if(!state||!state.tiles)return;
   const size=mapSize(),w=createWorld(size),players=new Map((state.players||[]).map(p=>[p.id,p]));
-  const neutral=new T.Color(0x749081);
+  const neutral=new T.Color(0x749081),skyColor=new T.Color(skyHex);
   for(let i=0;i<w.ids.length;i++){
     const id=w.ids[i],t=state.tiles[id]||{owner:null,troops:0};
     const p=pof(id,size),player=players.get(t.owner);
