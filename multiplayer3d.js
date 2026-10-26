@@ -12,7 +12,7 @@ function init(){
   if($('readyLobby')){$('readyLobby').disabled=!myId;$('readyLobby').textContent=isReady?'Not Ready':'Ready Up';}
   if($('lobbyPlayers'))$('lobbyPlayers').textContent=m.players.map(p=>p.name+(p.ready?' ✓ Ready':' · Waiting')).join('  |  ');
   status(m.players.length+' player(s) in lobby · '+(m.players.length<2?'At least two players are needed.':'Everyone must ready up to begin.'));
-}if(m.type==='start'||m.type==='state'){state=m.state||m;$('lobby').classList.add('hidden');draw();hud();}if(m.type==='gameOver'){state=m.final;draw();hud();$('help').innerHTML=m.winner===myId?'<span class="win">Victory! You control the winning nation.</span>':'The battle has ended.'}}}
+}if(m.type==='start'||m.type==='state'){state=m.state||m;const wasOpen=!$('lobby').classList.contains('hidden');$('lobby').classList.add('hidden');if(wasOpen&&document.activeElement?.closest?.('#lobby'))document.activeElement.blur();draw();hud();}if(m.type==='gameOver'){state=m.final;draw();hud();$('help').innerHTML=m.winner===myId?'<span class="win">Victory! You control the winning nation.</span>':'The battle has ended.'}}}
  function schedule(){if(retry>6)return;retry++;setTimeout(connect,Math.min(8000,1500*retry))}function send(m){if(ws&&ws.readyState===1)ws.send(JSON.stringify(m));else status('Still connecting to the multiplayer server…')}
  function mapSize(){return state?Math.round(Math.sqrt(Object.keys(state.tiles||{}).length))||16:16}function pof(id,size){let [r,c]=id.split('-').map(Number),h=size/2;return new T.Vector3((c-h+.5)*2.5,0,(r-h+.5)*2.5)}
  function disposeTree(root){
