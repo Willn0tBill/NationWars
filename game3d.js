@@ -2,28 +2,49 @@
 const $=id=>document.getElementById(id),mount=$('game'),loading=$('loading');
 const fail=t=>{if(loading){loading.textContent=t;loading.classList.remove('hidden')}};
 function boot(){
- if(!window.THREE||!window.NationWarsVisuals)throw Error('Three.js or art kit unavailable');const T=THREE,art=window.NationWarsVisuals;
+ if(!window.THREE||!window.NationWarsVisuals||!window.NationWarsSystems||!window.NationWarsOrders||!window.NationWarsCamera)throw Error('Required Nation Wars game modules unavailable');const T=THREE,art=window.NationWarsVisuals,systems=window.NationWarsSystems;
  const scene=new T.Scene(),camera=new T.PerspectiveCamera(50,innerWidth/innerHeight,.1,220),renderer=new T.WebGLRenderer({antialias:false,powerPreference:'high-performance'}),ray=new T.Raycaster(),mouse=new T.Vector2();
  renderer.setPixelRatio(Math.min(devicePixelRatio||1,matchMedia('(pointer:coarse)').matches?1.25:1.7));renderer.setSize(innerWidth,innerHeight);renderer.domElement.style.touchAction='none';mount.replaceChildren(renderer.domElement);
  art.atmosphere(T,scene,renderer,matchMedia('(pointer:coarse)').matches||(navigator.deviceMemory&&navigator.deviceMemory<=4));
- const MAP=24,H=MAP/2,TILE=2.5,PLAYER='#4da6ff',ENEMY='#ef6262';let selectedArmy=null,selectedPlot=null,territory=16,gold=1000,food=800,wood=300,iron=150,science=0,population=2500;
+ const MAP=24,H=MAP/2,TILE=2.5,PLAYER='#4da6ff',ENEMY='#ef6262';let selectedArmy=null,selectedPlot=null,territory=56,gold=1000,food=800,wood=300,iron=150,oil=145,science=0,population=2500,gameSeconds=0,waveNumber=0,rallyPicking=null;
  let yaw=.35,pitch=.91,dist=39,targetX=-15,targetZ=15,dragging=false,dragMode='',lastX=0,lastY=0,movedDuringDrag=false;
- const armies=[],plots=new Map(),buildings=new T.Group(),units=new T.Group(),cities=new T.Group(),routeFinder=window.NationWarsOrders;let moving=false,commandMode=false;scene.add(buildings,units,cities);
+ const armies=[],plots=new Map(),claims=new Map(),tileMeshes=new Map(),supplyLines=new Map(),buildings=new T.Group(),units=new T.Group(),cities=new T.Group(),routeFinder=window.NationWarsOrders;let moving=false,commandMode=false;scene.add(buildings,units,cities);
  const targetMarker=new T.Mesh(new T.RingGeometry(.7,.94,36),new T.MeshBasicMaterial({color:0xeac978,side:T.DoubleSide,transparent:true,opacity:.9,depthTest:false}));
  targetMarker.rotation.x=-Math.PI/2;targetMarker.position.y=.29;targetMarker.visible=false;scene.add(targetMarker);
  const defs={
- farm:{name:'Farm',cost:{gold:80,wood:35},food:28},housing:{name:'Housing',cost:{gold:100,wood:70},pop:220},mine:{name:'Mine',cost:{gold:120,wood:55,iron:10},iron:16},factory:{name:'Factory',cost:{gold:180,wood:100,iron:30},gold:18},research:{name:'Research Center',cost:{gold:150,wood:70,iron:20},science:12},military:{name:'Military Base',cost:{gold:160,wood:80,iron:35},food:-4,troops:3},market:{name:'Market',cost:{gold:110,wood:60},gold:30},hospital:{name:'Hospital',cost:{gold:140,wood:80,iron:20},pop:120,science:2}};
+ farm:{name:'Farm',cost:{gold:80,wood:35},food:28},housing:{name:'Housing',cost:{gold:100,wood:70},pop:220},mine:{name:'Mine',cost:{gold:120,wood:55,iron:10},iron:16},factory:{name:'Factory',cost:{gold:180,wood:100,iron:30},gold:18},research:{name:'Research Center',cost:{gold:150,wood:70,iron:20},science:12},military:{name:'Military Base',cost:{gold:160,wood:80,iron:35},food:-4,troops:3},market:{name:'Market',cost:{gold:110,wood:60},gold:30},hospital:{name:'Hospital',cost:{gold:140,wood:80,iron:20},pop:120,science:2},refinery:{name:'Oil Refinery',cost:{gold:225,wood:95,iron:45},oil:14,gold:-3}};
  const cam=window.NationWarsCamera.create({camera,renderer,initial:{x:-15,z:15,yaw:.35,pitch:.91,zoom:39},bounds:34,buttons:{zoomIn:'zoomIn',zoomOut:'zoomOut',reset:'resetView'}});
  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),pos=(x,z)=>new T.Vector3((x-H+.5)*TILE,0,(z-H+.5)*TILE),key=(x,z)=>x+'-'+z;
  function tilePoint(p){const x=Math.floor(p.x/TILE+H),z=Math.floor(p.z/TILE+H);return x>=0&&z>=0&&x<MAP&&z<MAP?{x,z}:null}
- function own(x,z){return x>=1&&x<=7&&z>=15&&z<=22}
+ function own(x,z){return claims.get(key(x,z))==='player'}
  function terrain(){return art.ground(T,scene,MAP,TILE)}
  function plotMesh(x,z,owner='player'){
-   const m=art.tile(T,owner==='player'?0x51896c:owner==='enemy'?0xa66e6a:0x789182,TILE);
-   const p=pos(x,z);m.position.x=p.x;m.position.z=p.z;
-   m.userData={plot:key(x,z),owner};scene.add(m);return m;
+   const id=key(x,z),existing=tileMeshes.get(id);
+   if(existing){claims.set(id,owner);existing.material.color.set(owner==='player'?0x51896c:owner==='enemy'?0xa66e6a:0x789182);existing.userData.owner=owner;return existing}
+   const m=art.tile(T,owner==='player'?0x51896c:owner==='enemy'?0xa66e6a:0x789182,TILE),p=pos(x,z);
+   m.position.x=p.x;m.position.z=p.z;
+   m.userData={plot:id,owner};scene.add(m);tileMeshes.set(id,m);claims.set(id,owner);return m;
  }
- function addPlot(x,z,type=null){plots.set(key(x,z),{x,z,type,owner:'player',mesh:plotMesh(x,z),building:null})}
+ function addPlot(x,z,type=null){
+   const id=key(x,z),mesh=plotMesh(x,z,'player');
+   let plot=plots.get(id);
+   if(!plot){plot={x,z,type,owner:'player',mesh,building:null};plots.set(id,plot)}
+   return plot;
+ }
+ function claimCell(x,z,owner){
+   if(x<0||z<0||x>=MAP||z>=MAP)return;
+   const id=key(x,z),old=claims.get(id);
+   if(old===owner)return;
+   if(owner==='player'){addPlot(x,z)}
+   else{
+     const plot=plots.get(id);
+     if(plot){if(plot.building)buildings.remove(plot.building);plots.delete(id);supplyLines.delete(id)}
+     plotMesh(x,z,owner);
+     if(selectedPlot?.x===x&&selectedPlot?.z===z)selectPlot(null);
+   }
+   if(owner==='player'&&old!=='player')territory++;
+   if(owner==='enemy'&&old==='player')territory=Math.max(0,territory-1);
+ }
  function building(plot){
    if(plot.building){buildings.remove(plot.building);plot.building.traverse(o=>{o.geometry?.dispose?.()})}
    if(!plot.type)return;
@@ -32,24 +53,31 @@ function boot(){
    g.traverse(o=>{if(o.isMesh)o.userData.plot=id});
    buildings.add(g);plot.building=g;
  }
- function army(owner,x,z,count){
-   const c=owner==='player'?PLAYER:ENEMY,g=art.army(T,c,count);
-   g.position.copy(pos(x,z));
-   g.userData={owner,x,z,count};
+ function army(owner,x,z,count,type='infantry'){
+   const c=owner==='player'?PLAYER:ENEMY,g=art.army(T,c,count,false,type);
+   g.position.copy(pos(x,z));g.userData={owner,x,z,count,type,busy:false};
    g.traverse(o=>{if(o.isMesh)o.userData.army=g});
    const ring=new T.Mesh(new T.RingGeometry(.78,.96,40),new T.MeshBasicMaterial({color:0xfde39e,transparent:true,opacity:.98,side:T.DoubleSide}));
    ring.rotation.x=-Math.PI/2;ring.position.y=.22;ring.visible=false;ring.name='selection';ring.userData.army=g;
    g.add(ring);units.add(g);armies.push(g);return g;
  }
+ function alive(owner){return armies.filter(a=>a.userData.owner===owner&&a.userData.count>0)}
+ function removeArmy(a){
+   const i=armies.indexOf(a);if(i>=0)armies.splice(i,1);
+   units.remove(a);
+   if(selectedArmy===a){selectedArmy=null;commandMode=false;targetMarker.visible=false}
+ }
+ function wallet(){return{gold,food,wood,iron,oil,science,population}}
+ function changeWallet(w){gold=w.gold;food=w.food;wood=w.wood;iron=w.iron;oil=w.oil;science=w.science;population=w.population}
  terrain();for(let z=15;z<=22;z++)for(let x=1;x<=7;x++)addPlot(x,z);for(let z=1;z<=7;z++)for(let x=16;x<=22;x++)plotMesh(x,z,'enemy');
  function city(owner,x,z){
    const g=art.city(T,owner);
    g.position.copy(pos(x,z));cities.add(g);
  }
  city('player',4,19);city('enemy',19,4);addPlot(4,19,'housing');addPlot(3,19,'farm');addPlot(5,19,'farm');addPlot(4,18,'military');plots.forEach(p=>building(p));
- army('player',4,18,80);army('player',6,19,55);army('enemy',18,5,75);army('enemy',20,6,50);army('enemy',17,3,40);
- function canPay(c){return Object.entries(c).every(([k,v])=>({gold,wood,iron,food,science,population}[k]||0)>=v)}
- function pay(c){for(const[k,v]of Object.entries(c)){if(k==='gold')gold-=v;if(k==='wood')wood-=v;if(k==='iron')iron-=v;if(k==='food')food-=v;if(k==='science')science-=v;if(k==='population')population-=v}}
+ army('player',4,18,80,'infantry');army('player',6,19,55,'recon');army('enemy',18,5,75,'infantry');army('enemy',20,6,50,'armor');army('enemy',17,3,40,'recon');
+ function canPay(c){return systems.resourcesCanPay(wallet(),c)}
+ function pay(c){const w=wallet();if(!systems.applyCost(w,c))return false;changeWallet(w);return true}
  function hud(){ $('gold').textContent=Math.floor(gold).toLocaleString();$('food').textContent=Math.floor(food).toLocaleString();$('wood').textContent=Math.floor(wood).toLocaleString();$('iron').textContent=Math.floor(iron).toLocaleString();$('science').textContent=Math.floor(science).toLocaleString();$('population').textContent=Math.floor(population).toLocaleString();$('selection').textContent=selectedArmy?`Army selected · ${selectedArmy.userData.count} troops · ${selectedArmy.userData.x+1}, ${selectedArmy.userData.z+1}`:selectedPlot?`Plot selected · ${selectedPlot.x+1}, ${selectedPlot.z+1}`:'Select an army or plot.';if(selectedPlot){const d=selectedPlot.type?defs[selectedPlot.type]:null;$('plotInfo').textContent=d?`${d.name} · produces ${d.food||0} food, ${d.gold||0} gold, ${d.iron||0} iron, ${d.science||0} science per tick.`:'Empty development plot · choose a building.'}else $('plotInfo').textContent='No plot selected.';document.querySelectorAll('[data-build]').forEach(b=>{const d=defs[b.dataset.build];b.disabled=!selectedPlot||!!selectedPlot.type||!canPay(d.cost)});if($('moveOrder')){$('moveOrder').disabled=!selectedArmy||moving;$('moveOrder').setAttribute('aria-pressed',String(commandMode&&!!selectedArmy));}if($('cancelOrder'))$('cancelOrder').disabled=!selectedArmy||moving;if($('split'))$('split').disabled=!selectedArmy||moving||selectedArmy.userData.count<20;}
  function selectArmy(a){if(moving)return;armies.forEach(q=>{const r=q.getObjectByName('selection');if(r)r.visible=false});selectedArmy=a;selectedPlot=null;commandMode=true;const r=a.getObjectByName('selection');if(r)r.visible=true;$('orders').textContent='Squad selected. Click or tap any destination to march there. Select an enemy squad to approach and attack.';hud()}
  function selectPlot(p){if(moving)return;armies.forEach(q=>{const r=q.getObjectByName('selection');if(r)r.visible=false});selectedArmy=null;commandMode=false;selectedPlot=p;if(p)$('orders').textContent=p.type?'This plot is already developed.':'Choose a building.';hud()}
