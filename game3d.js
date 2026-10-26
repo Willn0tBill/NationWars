@@ -66,6 +66,7 @@ function boot(){
  function removeArmy(a){
    const i=armies.indexOf(a);if(i>=0)armies.splice(i,1);
    units.remove(a);
+   a.traverse(o=>{if(o.geometry)o.geometry.dispose()});
    if(selectedArmy===a){selectedArmy=null;commandMode=false;targetMarker.visible=false}
  }
  function wallet(){return{gold,food,wood,iron,oil,science,population}}
@@ -99,6 +100,8 @@ function boot(){
    const select=$('trainUnit'),train=$('recruitBtn'),barrack=selectedPlot?.type==='military'?selectedPlot:null,type=select?.value||'infantry';
    const price=systems.trainingCost(type);
    put('trainCost',systems.formattedCost(price));
+   const chosen=systems.types[type];
+   if(chosen)put('unitDescription',`Strength ×${chosen.power} · Move ${chosen.oilPerTile} oil/tile or ${chosen.cashPerTile} cash/tile · Speed ×${chosen.speed}`);
    if(train)train.disabled=!barrack||!canPay(price)||alive('player').length>=systems.PLAYER_CAP||!freeSpawn(barrack);
    if($('barracksSelect'))$('barracksSelect').disabled=!barracks().length;
    const unlocked=supplyUnlocked();
