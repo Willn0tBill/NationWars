@@ -37,12 +37,22 @@ body{background:#8baeb9}
  .btn{min-height:43px}
 }
 @media(prefers-reduced-motion:reduce){.btn{transition:none}}
+
+/* Consistent controls on every 3D battlefield. */
+.camera-tools{position:fixed;z-index:3;top:95px;left:12px;display:grid;grid-template-columns:repeat(2,42px);gap:5px;padding:8px;border:1px solid rgba(175,225,228,.25);border-radius:13px;background:rgba(8,29,41,.91);box-shadow:0 12px 30px #0018;pointer-events:auto}
+.camera-tools button{width:42px;height:42px;border-radius:9px;border:1px solid rgba(178,222,226,.25);background:#234458;color:#fff;font-size:20px;font-weight:800;cursor:pointer}
+.camera-tools button:focus-visible{outline:3px solid #ffe19c;outline-offset:2px}
+.camera-tools button:hover{background:#326786}
+.camera-tools button:last-child{grid-column:span 2;width:100%;font-size:12px}
+.camera-tools .camera-tools-label{grid-column:span 2;text-align:center;color:#afc7cf;font-size:10px;letter-spacing:.1em;text-transform:uppercase}
+@media(max-width:700px){.camera-tools{top:150px;left:8px;padding:5px;grid-template-columns:repeat(2,38px)}.camera-tools button{width:38px;height:38px}.camera-tools button:last-child{width:100%}}
+@media(max-height:550px){.camera-tools{top:76px}}
 </style>
 </head>
 <body>
 <div id="loading" class="loading">Loading Nation Wars 3D…</div><div id="game"></div>
 <div class="hud"><div class="top"><div class="brand">NATION <span>WARS</span> 3D</div><div class="stat">Gold <b id="gold">1,000</b></div><div class="stat">Food <b id="food">800</b></div><div class="stat">Wood <b id="wood">300</b></div><div class="stat">Iron <b id="iron">150</b></div><div class="stat">Science <b id="science">0</b></div><div class="stat">Population <b id="population">2,500</b></div></div>
 <div class="side panel"><h2>Nation Command</h2><p id="selection">Select a squad or a development plot.</p><p id="orders">Choose a squad, then right-click (or tap) a neighboring tile to move.</p><h3>Selected Plot</h3><p id="plotInfo">No plot selected.</p><div class="buildgrid"><button class="btn" data-build="farm">Farm</button><button class="btn" data-build="housing">Housing</button><button class="btn" data-build="mine">Mine</button><button class="btn" data-build="factory">Factory</button><button class="btn" data-build="research">Research</button><button class="btn" data-build="military">Military</button><button class="btn" data-build="market">Market</button><button class="btn" data-build="hospital">Hospital</button></div><button class="btn" id="split">Split Army</button><button class="btn secondary" id="reset">Restart Nation</button><a class="btn secondary" href="index.html" style="display:block;text-align:center;text-decoration:none">Back to Nation Wars</a></div>
-<div class="bottom panel"><span class="selected">Controls:</span> Left click = select · Right click = move/attack · Shift + drag or middle drag = orbit camera · Wheel = zoom · <b>R</b> = restart. Select an empty plot to build on it.</div></div>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script><script src="visuals3d.js?v=20261026-rtspolish"></script><script src="game3d.js?v=20261026-rtspolish"></script>
+<div class="bottom panel"><span class="selected">Controls:</span> Left click = select · Right click = move/attack · WASD = pan · Shift + drag or right drag = orbit · Middle/touch drag = pan · Wheel/pinch = zoom · Q/E = rotate · Home = reset camera · <b>R</b> = restart. Select an empty plot to build on it.</div></div>
+<div class="camera-tools" role="group" aria-label="Camera controls"><span class="camera-tools-label">Camera</span><button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in">+</button><button id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out">−</button><button id="resetView" type="button" aria-label="Reset camera" title="Reset camera (Home)">Reset view</button></div><script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script><script src="visuals3d.js?v=20261026-rtspolish"></script><script src="camera3d.js?v=20261026-cam06"></script><script src="game3d.js?v=20261026-cam06"></script>
 </body></html>
