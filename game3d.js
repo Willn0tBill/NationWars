@@ -2,25 +2,47 @@
 const $=id=>document.getElementById(id),mount=$('game'),loading=$('loading');
 const fail=t=>{if(loading){loading.textContent=t;loading.classList.remove('hidden')}};
 function boot(){
- if(!window.THREE)throw Error('Three.js unavailable');const T=THREE;
+ if(!window.THREE||!window.NationWarsVisuals)throw Error('Three.js or art kit unavailable');const T=THREE,art=window.NationWarsVisuals;
  const scene=new T.Scene(),camera=new T.PerspectiveCamera(50,innerWidth/innerHeight,.1,220),renderer=new T.WebGLRenderer({antialias:false,powerPreference:'high-performance'}),ray=new T.Raycaster(),mouse=new T.Vector2();
- scene.background=new T.Color(0x07111d);scene.fog=new T.Fog(0x07111d,45,115);renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.25));renderer.setSize(innerWidth,innerHeight);renderer.outputColorSpace=T.SRGBColorSpace;renderer.domElement.style.touchAction='none';mount.replaceChildren(renderer.domElement);
- scene.add(new T.HemisphereLight(0xc5ddff,0x152313,2));const sun=new T.DirectionalLight(0xffffff,2.6);sun.position.set(20,35,12);scene.add(sun);
+ renderer.setPixelRatio(Math.min(devicePixelRatio||1,matchMedia('(pointer:coarse)').matches?1.25:1.7));renderer.setSize(innerWidth,innerHeight);renderer.domElement.style.touchAction='none';mount.replaceChildren(renderer.domElement);
+ art.atmosphere(T,scene,renderer,matchMedia('(pointer:coarse)').matches||(navigator.deviceMemory&&navigator.deviceMemory<=4));
  const MAP=24,H=MAP/2,TILE=2.5,PLAYER='#4da6ff',ENEMY='#ef6262';let selectedArmy=null,selectedPlot=null,territory=16,gold=1000,food=800,wood=300,iron=150,science=0,population=2500;
- let yaw=.15,pitch=.82,dist=34,targetX=0,targetZ=0,dragging=false,dragMode='',lastX=0,lastY=0,movedDuringDrag=false;
+ let yaw=.35,pitch=.91,dist=39,targetX=-15,targetZ=15,dragging=false,dragMode='',lastX=0,lastY=0,movedDuringDrag=false;
  const armies=[],plots=new Map(),buildings=new T.Group(),units=new T.Group(),cities=new T.Group();scene.add(buildings,units,cities);
  const defs={
  farm:{name:'Farm',cost:{gold:80,wood:35},food:28},housing:{name:'Housing',cost:{gold:100,wood:70},pop:220},mine:{name:'Mine',cost:{gold:120,wood:55,iron:10},iron:16},factory:{name:'Factory',cost:{gold:180,wood:100,iron:30},gold:18},research:{name:'Research Center',cost:{gold:150,wood:70,iron:20},science:12},military:{name:'Military Base',cost:{gold:160,wood:80,iron:35},food:-4,troops:3},market:{name:'Market',cost:{gold:110,wood:60},gold:30},hospital:{name:'Hospital',cost:{gold:140,wood:80,iron:20},pop:120,science:2}};
  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),pos=(x,z)=>new T.Vector3((x-H+.5)*TILE,0,(z-H+.5)*TILE),key=(x,z)=>x+'-'+z;
  function tilePoint(p){return{x:clamp(Math.floor(p.x/TILE+H),0,MAP-1),z:clamp(Math.floor(p.z/TILE+H),0,MAP-1)}}
  function own(x,z){return x>=1&&x<=7&&z>=15&&z<=22}
- function terrain(){const f=new T.Mesh(new T.PlaneGeometry(MAP*TILE,MAP*TILE),new T.MeshLambertMaterial({color:0x21452f}));f.rotation.x=-Math.PI/2;f.userData.ground=true;scene.add(f);const w=new T.Mesh(new T.PlaneGeometry(125,125),new T.MeshBasicMaterial({color:0x0a2335}));w.rotation.x=-Math.PI/2;w.position.y=-.24;scene.add(w);const g=new T.GridHelper(MAP*TILE,MAP,0x557b62,0x365342);g.position.y=.02;g.material.transparent=true;g.material.opacity=.42;scene.add(g)}
- function plotMesh(x,z,owner='player'){const m=new T.Mesh(new T.BoxGeometry(2.18,.12,2.18),new T.MeshStandardMaterial({color:owner==='player'?0x2d6040:owner==='enemy'?0x603535:0x405044,roughness:.9}));const p=pos(x,z);m.position.set(p.x,.08,p.z);m.userData={plot:key(x,z),owner};scene.add(m);return m}
+ function terrain(){return art.ground(T,scene,MAP,TILE)}
+ function plotMesh(x,z,owner='player'){
+   const m=art.tile(T,owner==='player'?0x51896c:owner==='enemy'?0xa66e6a:0x789182,TILE);
+   const p=pos(x,z);m.position.x=p.x;m.position.z=p.z;
+   m.userData={plot:key(x,z),owner};scene.add(m);return m;
+ }
  function addPlot(x,z,type=null){plots.set(key(x,z),{x,z,type,owner:'player',mesh:plotMesh(x,z),building:null})}
- function building(plot){if(plot.building)buildings.remove(plot.building);if(!plot.type)return;const g=new T.Group(),p=pos(plot.x,plot.z),d=defs[plot.type];g.position.set(p.x,0,p.z);g.userData.plot=key(plot.x,plot.z);const base=new T.Mesh(new T.BoxGeometry(1.55,.22,1.55),new T.MeshStandardMaterial({color:0x52616b}));base.position.y=.13;base.userData.plot=key(plot.x,plot.z);g.add(base);let count=plot.type==='farm'?3:plot.type==='housing'?4:plot.type==='factory'?3:2;for(let i=0;i<count;i++){let h=plot.type==='farm'?.28:.65+(i%2)*.25,b=new T.Mesh(new T.BoxGeometry(.38,h,.38),new T.MeshStandardMaterial({color:plot.type==='farm'?0x77a34d:plot.type==='military'?0x6e7784:plot.type==='research'?0x8b9fe0:0x9aa7b0}));b.position.set((i%2-.5)*.65,h/2+.25,(Math.floor(i/2)-.5)*.65);b.userData.plot=key(plot.x,plot.z);g.add(b)}buildings.add(g);plot.building=g}
- function army(owner,x,z,count){const g=new T.Group();g.position.copy(pos(x,z));g.userData={owner,x,z,count};const c=owner==='player'?PLAYER:ENEMY;const base=new T.Mesh(new T.CylinderGeometry(.58,.72,.2,8),new T.MeshStandardMaterial({color:c}));base.position.y=.2;base.userData.army=g;g.add(base);for(let i=0;i<Math.min(10,Math.max(3,Math.ceil(count/10)));i++){const u=new T.Mesh(new T.BoxGeometry(.24,.72,.24),new T.MeshStandardMaterial({color:owner==='player'?0xd9edff:0xffd7d7}));u.position.set((i%5-2)*.18,.57,(Math.floor(i/5)-.5)*.34);u.userData.army=g;g.add(u)}const ring=new T.Mesh(new T.RingGeometry(.72,.9,24),new T.MeshBasicMaterial({color:0x72c5ff,transparent:true,opacity:.95,side:T.DoubleSide}));ring.rotation.x=-Math.PI/2;ring.position.y=.16;ring.visible=false;ring.name='selection';ring.userData.army=g;g.add(ring);units.add(g);armies.push(g);return g}
+ function building(plot){
+   if(plot.building){buildings.remove(plot.building);plot.building.traverse(o=>{o.geometry?.dispose?.()})}
+   if(!plot.type)return;
+   const g=art.building(T,plot.type),p=pos(plot.x,plot.z),id=key(plot.x,plot.z);
+   g.position.set(p.x,0,p.z);g.userData.plot=id;
+   g.traverse(o=>{if(o.isMesh)o.userData.plot=id});
+   buildings.add(g);plot.building=g;
+ }
+ function army(owner,x,z,count){
+   const c=owner==='player'?PLAYER:ENEMY,g=art.army(T,c,count);
+   g.position.copy(pos(x,z));
+   g.userData={owner,x,z,count};
+   g.traverse(o=>{if(o.isMesh)o.userData.army=g});
+   const ring=new T.Mesh(new T.RingGeometry(.78,.96,40),new T.MeshBasicMaterial({color:0xfde39e,transparent:true,opacity:.98,side:T.DoubleSide}));
+   ring.rotation.x=-Math.PI/2;ring.position.y=.22;ring.visible=false;ring.name='selection';ring.userData.army=g;
+   g.add(ring);units.add(g);armies.push(g);return g;
+ }
  terrain();for(let z=15;z<=22;z++)for(let x=1;x<=7;x++)addPlot(x,z);for(let z=1;z<=7;z++)for(let x=16;x<=22;x++)plotMesh(x,z,'enemy');
- function city(owner,x,z){const g=new T.Group();g.position.copy(pos(x,z));for(let i=0;i<5;i++){const h=.8+(i%3)*.25,b=new T.Mesh(new T.BoxGeometry(.45,h,.45),new T.MeshStandardMaterial({color:owner==='player'?0x8fb9d8:0xb97878}));b.position.set((i%3-1)*.5,h/2+.2,(Math.floor(i/3)-.5)*.55);g.add(b)}cities.add(g)}
+ function city(owner,x,z){
+   const g=art.city(T,owner);
+   g.position.copy(pos(x,z));cities.add(g);
+ }
  city('player',4,19);city('enemy',19,4);addPlot(4,19,'housing');addPlot(3,19,'farm');addPlot(5,19,'farm');addPlot(4,18,'military');plots.forEach(p=>building(p));
  army('player',4,18,80);army('player',6,19,55);army('enemy',18,5,75);army('enemy',20,6,50);army('enemy',17,3,40);
  function updateCamera(){const h=Math.cos(pitch)*dist;camera.position.set(targetX+Math.sin(yaw)*h,Math.sin(pitch)*dist,targetZ+Math.cos(yaw)*h);camera.lookAt(targetX,0,targetZ)}
