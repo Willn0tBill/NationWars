@@ -26,7 +26,17 @@
     function income(){const p=owned('player').length;state.gold+=p*.8+state.cities*2;state.food=Math.max(0,state.food+p*.45-state.cities*.15);state.science+=state.cities*.35;owned('player').forEach(id=>tile(id).troops=Math.min(60,tile(id).troops+(tile(id).city?2:1)));owned('bot').forEach(id=>tile(id).troops=Math.min(60,tile(id).troops+1));}
     function tick(){if(!state.active||state.paused)return;state.time++;state.turn++;if(state.turn%2===0)income();if(state.turn%3===0)botTurn();renderAll();update();checkVictory();}
     function checkVictory(){const p=owned('player').length,b=owned('bot').length;if(b===0||p>=80)endGame(true);else if(p===0)endGame(false);}
-    function endGame(win){if(!state.active)return;state.active=false;clearInterval(state.loop);$('modalTitle').textContent=win?'Nation Victorious':'Nation Defeated';$('modalText').textContent=win?'Your nation secured the battlefield.':'Your territories were lost. Start another match and try a new strategy.';$('finalScore').textContent=Math.floor(state.score);$('finalTerritory').textContent=owned('player').length;$('finalTime').textContent=formatTime(state.time);$('finalCities').textContent=state.cities;el.modal.classList.add('show');}
+    function endGame(win){if(!state.active)return;state.active=false;clearInterval(state.loop);$('modalTitle').textContent=win?'Nation Victorious':'Nation Defeated';$('modalText').textContent=win?'Your nation secured the battlefield.':'Your territories were lost. Start another match and try a new strategy.';$('finalScore').textContent=Math.floor(state.score);$('finalTerritory').textContent=owned('player').length;$('finalTime').textContent=formatTime(state.time);$('finalCities').textContent=state.cities;el.modal.classList.add('show');
+      // Scores are saved on this device; no misleading claim of a global ranking.
+      try {
+        const key='nationWarsScores';
+        const previous=JSON.parse(localStorage.getItem(key)||'[]');
+        const scores=Array.isArray(previous)?previous:[];
+        scores.push({player:commander(),score:Math.floor(state.score),mode:'practice',difficulty:2,date:new Date().toISOString(),result:win?'Victory':'Defeat',territories:owned('player').length});
+        scores.sort((a,b)=>Number(b.score||0)-Number(a.score||0));
+        localStorage.setItem(key,JSON.stringify(scores.slice(0,100)));
+      } catch(e) { console.warn('Nation Wars could not save the local leaderboard score',e); }
+    }
     function applyCamera(){el.map.style.transform=`translate(${state.cameraX}px,${state.cameraY}px) scale(${state.zoom})`;}
     function centerMap(){const r=el.arena.getBoundingClientRect(),mw=state.size*64,mh=state.size*64;state.zoom=Math.min(1,Math.max(.65,Math.min((r.width-100)/mw,(r.height-120)/mh)));state.cameraX=(r.width-mw*state.zoom)/2;state.cameraY=(r.height-mh*state.zoom)/2;applyCamera();}
     function zoomAt(d,x,y){const old=state.zoom;state.zoom=Math.min(1.6,Math.max(.55,state.zoom+d));const ratio=state.zoom/old;state.cameraX=x-(x-state.cameraX)*ratio;state.cameraY=y-(y-state.cameraY)*ratio;applyCamera();}
