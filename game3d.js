@@ -29,6 +29,7 @@ function boot(){
    const id=key(x,z),mesh=plotMesh(x,z,'player');
    let plot=plots.get(id);
    if(!plot){plot={x,z,type,owner:'player',mesh,building:null};plots.set(id,plot)}
+   if(type)plot.type=type;
    return plot;
  }
  function claimCell(x,z,owner){
@@ -86,62 +87,155 @@ function boot(){
 
  function adjacent(a,b){return Math.abs(a.x-b.x)<=1&&Math.abs(a.z-b.z)<=1&&!(a.x===b.x&&a.z===b.z)}
  function combat(a,d){
-   if(!adjacent(a.userData,d.userData)){$('orders').textContent='Move closer to the enemy first.';return}
-   if(a.userData.count<=0){$('orders').textContent='This squad has no troops left.';return}
-   const attack=a.userData.count,defense=d.userData.count;
-   a.userData.count=Math.max(0,attack-Math.max(1,Math.floor(defense*.2)));
-   d.userData.count=Math.max(0,defense-Math.max(1,Math.floor(attack*.35)));
-   if(d.userData.count===0){
-     d.userData.owner='player';
-     d.userData.count=Math.max(1,Math.floor(a.userData.count*.25));
-     territory++;
-     $('orders').textContent='Enemy squad defeated. Territory secured.';
-   }else $('orders').textContent='Battle finished. Both squads took losses.';
-   d.children[0]?.material?.color?.set(d.userData.owner==='player'?PLAYER:ENEMY);
+   if(!a||!d||a===d||!adjacent(a.userData,d.userData)||a.userData.owner===d.userData.owner)return;
+   const attacker=a.userData,defender=d.userData;
+   const offense=systems.types[attacker.type]?.power||1,defense=systems.types[defender.type]?.power||1;
+   const attackDamage=Math.max(3,Math.floor(attacker.count*offense*.34));
+   const counterDamage=Math.max(2,Math.floor(defender.count*defense*.18));
+   defender.count=Math.max(0,defender.count-attackDamage);
+   attacker.count=Math.max(0,attacker.count-counterDamage);
+   const winner=defender.count===0?attacker.owner:attacker.count===0?defender.owner:null;
+   if(defender.count===0){removeArmy(d);if(attacker.count>0)claimCell(defender.x,defender.z,attacker.owner)}
+   if(attacker.count===0)removeArmy(a);
+   $('orders').textContent=winner?(winner==='player'?'Your squad secured the battlefield.':'Enemy forces took the position.'):'Clash resolved; squads are still contesting the area.';
    hud();
  }
- function issueOrder(x,z){
-   if(!selectedArmy){$('orders').textContent='Select a friendly squad first.';return}
-   if(moving){$('orders').textContent='That squad is already moving.';return}
-   if(!Number.isInteger(x)||!Number.isInteger(z)||x<0||z<0||x>=MAP||z>=MAP){
-     $('orders').textContent='Select a tile inside the battlefield.';return;
-   }
-   const movingArmy=selectedArmy;
-   const occupant=armies.find(a=>a!==movingArmy&&a.userData.count>0&&a.userData.x===x&&a.userData.z===z);
-   if(occupant?.userData.owner==='player'){selectArmy(occupant);return}
-   const enemy=occupant?.userData.owner==='enemy'?occupant:null;
-   const start={x:movingArmy.userData.x,z:movingArmy.userData.z};
-   const blocked=new Set(armies.filter(a=>a!==movingArmy&&a.userData.count>0).map(a=>a.userData.x+','+a.userData.z));
-   const path=routeFinder.route({start,goal:{x,z},size:MAP,blocked,approach:!!enemy});
-   if(!path){$('orders').textContent='No clear route to that destination. Try a different tile.';return}
-   if(!enemy&&!path.length){$('orders').textContent='Your squad is already on that tile.';return}
-   moving=true;commandMode=true;targetMarker.position.x=pos(x,z).x;targetMarker.position.z=pos(x,z).z;targetMarker.visible=true;
-   $('orders').textContent=enemy?'Marching toward the enemy squad…':`Moving squad · ${path.length} tile(s) to destination…`;
-   hud();
-   function finish(){
-     moving=false;targetMarker.visible=false;
-     if(enemy&&enemy.userData.owner==='enemy')combat(movingArmy,enemy);
-     else $('orders').textContent='Squad arrived. Choose another destination or select another squad.';
-     hud();
-   }
-   function takeStep(index){
-     if(index>=path.length){finish();return}
-     const target=path[index],from=movingArmy.position.clone(),to=pos(target.x,target.z),startTime=performance.now();
+ function nearestDestination(x,z,owner){
+   const candidates=alive(owner);
+   if(!candidates.length)return null;
+   return candidates.reduce((a,b)=>Math.max(Math.abs(a.userData.x-x),Math.abs(a.userData.z-z))<=Math.max(Math.abs(b.userData.x-x),Math.abs(b.userData.z-z))?a:b);
+ }
+ function occupied(x,z,ignore=null){return armies.find(a=>a!==ignore&&a.userData.count>0&&a.userData.x===x&&a.userData.z===z)}
+ function findRoute(a,x,z,approach=false){
+   const blocked=new Set(armies.filter(o=>o!==a&&o.userData.count>0).map(o=>o.userData.x+','+o.userData.z));
+   return routeFinder.route({start:{x:a.userData.x,z:a.userData.z},goal:{x,z},size:MAP,blocked,approach});
+ }
+ function travelBill(a,steps){
+   const cost=systems.travelQuote(a.userData.type,steps,wallet());
+   if(!cost)return null;
+   const w=wallet();w[cost.currency]-=cost.amount;changeWallet(w);
+   return cost;
+ }
+ function march(a,path,done=()=>{},quiet=false){
+   if(a.userData.busy)return false;
+   a.userData.busy=true;
+   if(!quiet&&selectedArmy===a)moving=true;
+   if(!path.length){a.userData.busy=false;moving=false;done();hud();return true}
+   function step(index){
+     if(a.userData.count<=0||!armies.includes(a)){a.userData.busy=false;moving=false;targetMarker.visible=false;return}
+     if(index>=path.length){
+       a.userData.busy=false;
+       if(!quiet){moving=false;targetMarker.visible=false}
+       done();hud();return;
+     }
+     const target=path[index],from=a.position.clone(),to=pos(target.x,target.z),started=performance.now();
+     const duration=240/(systems.types[a.userData.type]?.speed||1);
      function frame(now){
-       const progress=clamp((now-startTime)/230,0,1),eased=progress*progress*(3-2*progress);
-       movingArmy.position.lerpVectors(from,to,eased);
-       movingArmy.position.y=Math.sin(Math.PI*eased)*.16;
-       if(progress<1){requestAnimationFrame(frame);return}
-       movingArmy.position.copy(to);
-       movingArmy.userData.x=target.x;movingArmy.userData.z=target.z;
-       $('orders').textContent=enemy
-         ?`Approaching enemy · ${index+1}/${path.length} tile(s)…`
-         :`Moving squad · ${index+1}/${path.length} tile(s)…`;
-       hud();takeStep(index+1);
+       const t=clamp((now-started)/duration,0,1),ease=t*t*(3-2*t);
+       a.position.lerpVectors(from,to,ease);
+       a.position.y=Math.sin(Math.PI*ease)*.16;
+       if(t<1){requestAnimationFrame(frame);return}
+       a.position.copy(to);a.userData.x=target.x;a.userData.z=target.z;
+       if(!occupied(target.x,target.z,a))claimCell(target.x,target.z,a.userData.owner);
+       if(!quiet)$('orders').textContent=`Moving squad · ${index+1}/${path.length} tile(s)…`;
+       if(!quiet)hud();step(index+1);
      }
      requestAnimationFrame(frame);
    }
-   takeStep(0);
+   step(0);hud();return true;
+ }
+ function issueOrder(x,z){
+   if(!selectedArmy||selectedArmy.userData.owner!=='player'){ $('orders').textContent='Select a friendly squad first.';return }
+   if(moving||selectedArmy.userData.busy){$('orders').textContent='This squad is already moving.';return}
+   if(!Number.isInteger(x)||!Number.isInteger(z)||x<0||z<0||x>=MAP||z>=MAP){$('orders').textContent='Choose a tile inside the map.';return}
+   const a=selectedArmy,other=occupied(x,z,a);
+   if(other?.userData.owner==='player'){selectArmy(other);return}
+   const enemy=other?.userData.owner==='enemy'?other:null;
+   const path=findRoute(a,x,z,!!enemy);
+   if(!path){$('orders').textContent='No path available. Try another destination.';return}
+   if(!enemy&&!path.length){$('orders').textContent='Squad already at destination.';return}
+   const fare=travelBill(a,path.length);
+   if(!fare){$('orders').textContent=`Not enough oil or cash to move ${path.length} tile(s). Build an Oil Refinery or earn more cash.`;return}
+   targetMarker.position.set(pos(x,z).x,.29,pos(x,z).z);targetMarker.visible=true;
+   $('orders').textContent=`Movement funded: ${fare.amount} ${fare.currency==='gold'?'cash':'oil'}. ${enemy?'Approaching enemy…':'Marching…'}`;
+   march(a,path,()=>{if(enemy&&enemy.userData.count>0)combat(a,enemy);else $('orders').textContent='Squad arrived. Select another destination.';hud()});
+ }
+ function freeSpawn(plot){
+   const options=[];
+   for(let radius=1;radius<=3;radius++)for(let dx=-radius;dx<=radius;dx++)for(let dz=-radius;dz<=radius;dz++){
+     if(Math.max(Math.abs(dx),Math.abs(dz))!==radius)continue;
+     const x=plot.x+dx,z=plot.z+dz;
+     if(x>=0&&z>=0&&x<MAP&&z<MAP&&own(x,z)&&!occupied(x,z))options.push({x,z});
+   }
+   return options[0]||null;
+ }
+ function trainAt(plot,type,automatic=false){
+   if(!plot||plot.type!=='military'||!own(plot.x,plot.z))return{error:'Select a friendly Military Barracks first.'};
+   const spec=systems.types[type];if(!spec)return{error:'Choose a valid unit type.'};
+   if(alive('player').length>=systems.PLAYER_CAP)return{error:'Unit cap reached. Merge or reposition squads.'};
+   const spot=freeSpawn(plot);if(!spot)return{error:'Clear an empty friendly tile near the barracks to recruit.'};
+   const price=systems.trainingCost(type,automatic);
+   if(!canPay(price))return{error:`Need ${systems.formattedCost(price)}.`};
+   pay(price);
+   const squad=army('player',spot.x,spot.z,spec.count,type);
+   return{squad,spot,price};
+ }
+ function barracks(){return[...plots.values()].filter(p=>p.type==='military'&&own(p.x,p.z))}
+ function supplyUnlocked(){return systems.unlockAuto({territories:territory,science,barracks:barracks().length})}
+ function processSupplyLines(){
+   if(!supplyUnlocked())return;
+   for(const[id,line]of supplyLines){
+     if(!line.enabled||!line.rally)continue;
+     const plot=plots.get(id);
+     if(!plot||plot.type!=='military'||!own(plot.x,plot.z)){supplyLines.delete(id);continue}
+     if(alive('player').length>=systems.PLAYER_CAP)continue;
+     const spot=freeSpawn(plot);if(!spot)continue;
+     const ghost={userData:{x:spot.x,z:spot.z,type:line.type}};
+     const blocked=new Set(armies.filter(a=>a.userData.count>0).map(a=>a.userData.x+','+a.userData.z));
+     const path=routeFinder.route({start:spot,goal:line.rally,size:MAP,blocked});
+     if(!path)continue;
+     const training=systems.trainingCost(line.type,true);
+     const fare=systems.travelQuote(line.type,path.length,{gold:gold-(training.gold||0),oil:oil-(training.oil||0)});
+     if(!fare||!canPay(training))continue;
+     const trained=trainAt(plot,line.type,true);
+     if(trained.error)continue;
+     const a=trained.squad;
+     const travel=travelBill(a,path.length);
+     if(!travel)continue;
+     march(a,path,()=>{if(selectedArmy!==a)$('orders').textContent=`Supply line delivered a ${systems.types[line.type].label} squad.`;},true);
+     line.shipments=(line.shipments||0)+1;
+   }
+   hud();
+ }
+ function spawnWave(){
+   const total=alive('enemy').length;
+   waveNumber++;
+   if(total>=systems.ENEMY_CAP){hud();return}
+   const slots=[];
+   for(let z=1;z<=8;z++)for(let x=15;x<=22;x++){
+     if(claims.get(key(x,z))==='enemy'&&!occupied(x,z))slots.push({x,z});
+   }
+   slots.sort((a,b)=>Math.hypot(a.x-19,a.z-4)-Math.hypot(b.x-19,b.z-4));
+   const amount=Math.min(1+Math.floor(waveNumber/3),3,systems.ENEMY_CAP-total,slots.length);
+   for(let i=0;i<amount;i++){
+     const k=(waveNumber*3+i*7)%Math.max(1,slots.length),site=slots.splice(k,1)[0];
+     if(!site)continue;
+     const choices=['infantry','recon','armor','artillery'];
+     const type=choices[(waveNumber+i)%Math.min(4,2+Math.floor(waveNumber/2))];
+     army('enemy',site.x,site.z,systems.types[type].count+6+waveNumber*2,type);
+   }
+   $('orders').textContent=`Enemy wave ${waveNumber} arrived (${amount} squad${amount===1?'':'s'}). Defend your borders!`;
+   hud();
+ }
+ function enemyTurn(){
+   const player=alive('player');if(!player.length)return;
+   const candidates=alive('enemy').filter(a=>!a.userData.busy).sort((a,b)=>a.userData.x-b.userData.x);
+   for(const enemy of candidates.slice(0,Math.min(4,2+Math.floor(waveNumber/2)))){
+     const target=nearestDestination(enemy.userData.x,enemy.userData.z,'player');if(!target)break;
+     if(adjacent(enemy.userData,target.userData)){combat(enemy,target);continue}
+     const path=findRoute(enemy,target.userData.x,target.userData.z,true);
+     if(path?.length)march(enemy,[path[0]],()=>{},true);
+   }
  }
  function click(e){
    if(moving)return;
