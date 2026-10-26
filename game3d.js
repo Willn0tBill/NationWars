@@ -8,7 +8,7 @@ function boot(){
  art.atmosphere(T,scene,renderer,matchMedia('(pointer:coarse)').matches||(navigator.deviceMemory&&navigator.deviceMemory<=4));
  const MAP=24,H=MAP/2,TILE=2.5,PLAYER='#4da6ff',ENEMY='#ef6262';let selectedArmy=null,selectedPlot=null,territory=56,gold=1000,food=800,wood=300,iron=150,oil=145,science=0,population=2500,gameSeconds=0,waveNumber=0,rallyPicking=null;
  let yaw=.35,pitch=.91,dist=39,targetX=-15,targetZ=15,dragging=false,dragMode='',lastX=0,lastY=0,movedDuringDrag=false;
- const armies=[],plots=new Map(),claims=new Map(),tileMeshes=new Map(),supplyLines=new Map(),buildings=new T.Group(),units=new T.Group(),cities=new T.Group(),routeFinder=window.NationWarsOrders;let moving=false,commandMode=false;const SAVE_KEY='nationWars_campaign_v1';scene.add(buildings,units,cities);
+ const armies=[],plots=new Map(),claims=new Map(),tileMeshes=new Map(),supplyLines=new Map(),buildings=new T.Group(),units=new T.Group(),cities=new T.Group(),routeFinder=window.NationWarsOrders;let moving=false,commandMode=false,startingFresh=false;const SAVE_KEY='nationWars_campaign_v1';scene.add(buildings,units,cities);
  const targetMarker=new T.Mesh(new T.RingGeometry(.7,.94,36),new T.MeshBasicMaterial({color:0xeac978,side:T.DoubleSide,transparent:true,opacity:.9,depthTest:false}));
  targetMarker.rotation.x=-Math.PI/2;targetMarker.position.y=.29;targetMarker.visible=false;scene.add(targetMarker);
  const defs={
@@ -80,6 +80,7 @@ function boot(){
  army('player',4,18,80,'infantry');army('player',6,19,55,'recon');army('enemy',18,5,75,'infantry');army('enemy',20,6,50,'armor');army('enemy',17,3,40,'recon');
  const loadedSave=restoreCampaign();
  function saveCampaign(){
+   if(startingFresh)return false;
    try{
      const storage=window.localStorage;if(!storage)return false;
      const data={
@@ -425,6 +426,7 @@ function boot(){
  $('saveGame').onclick=()=>{$('orders').textContent=saveCampaign()?'Campaign saved on this device.':'Save unavailable in this browser.'};
  $('reset').onclick=()=>{
    if(!confirm('Start a new Nation Wars campaign? Your current local save will be replaced.'))return;
+   startingFresh=true;
    try{window.localStorage?.removeItem(SAVE_KEY)}catch(e){}
    location.reload();
  };
