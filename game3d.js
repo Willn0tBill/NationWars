@@ -8,7 +8,7 @@ function boot(){
  art.atmosphere(T,scene,renderer,matchMedia('(pointer:coarse)').matches||(navigator.deviceMemory&&navigator.deviceMemory<=4));
  const MAP=24,H=MAP/2,TILE=2.5,PLAYER='#4da6ff',ENEMY='#ef6262';let selectedArmy=null,selectedPlot=null,territory=56,gold=1000,food=800,wood=300,iron=150,oil=145,science=0,population=2500,gameSeconds=0,waveNumber=0,rallyPicking=null;
  let yaw=.35,pitch=.91,dist=39,targetX=-15,targetZ=15,dragging=false,dragMode='',lastX=0,lastY=0,movedDuringDrag=false;
- const armies=[],plots=new Map(),claims=new Map(),tileMeshes=new Map(),supplyLines=new Map(),buildings=new T.Group(),units=new T.Group(),cities=new T.Group(),routeFinder=window.NationWarsOrders;let moving=false,commandMode=false;scene.add(buildings,units,cities);
+ const armies=[],plots=new Map(),claims=new Map(),tileMeshes=new Map(),supplyLines=new Map(),buildings=new T.Group(),units=new T.Group(),cities=new T.Group(),routeFinder=window.NationWarsOrders;let moving=false,commandMode=false;const SAVE_KEY='nationWars_campaign_v1';scene.add(buildings,units,cities);
  const targetMarker=new T.Mesh(new T.RingGeometry(.7,.94,36),new T.MeshBasicMaterial({color:0xeac978,side:T.DoubleSide,transparent:true,opacity:.9,depthTest:false}));
  targetMarker.rotation.x=-Math.PI/2;targetMarker.position.y=.29;targetMarker.visible=false;scene.add(targetMarker);
  const defs={
@@ -78,6 +78,76 @@ function boot(){
  }
  city('player',4,19);city('enemy',19,4);addPlot(4,19,'housing');addPlot(3,19,'farm');addPlot(5,19,'farm');addPlot(4,18,'military');plots.forEach(p=>building(p));
  army('player',4,18,80,'infantry');army('player',6,19,55,'recon');army('enemy',18,5,75,'infantry');army('enemy',20,6,50,'armor');army('enemy',17,3,40,'recon');
+ const loadedSave=restoreCampaign();
+ function saveCampaign(){
+   try{
+     const storage=window.localStorage;if(!storage)return false;
+     const data={
+       version:1,updatedAt:Date.now(),
+       resources:{gold,food,wood,iron,oil,science,population},
+       gameSeconds,waveNumber,
+       claims:[...claims.entries()],
+       structures:[...plots.entries()].filter(([,p])=>p.type).map(([id,p])=>[id,p.type]),
+       squads:armies.map(a=>({...a.userData})).filter(a=>a.count>0).map(({owner,x,z,count,type})=>({owner,x,z,count,type})),
+       supply:[...supplyLines.entries()].map(([id,l])=>[id,{enabled:!!l.enabled,type:l.type,rally:l.rally,shipments:l.shipments||0}])
+     };
+     storage.setItem(SAVE_KEY,JSON.stringify(data));
+     return true;
+   }catch(e){console.warn('Could not save Nation Wars locally',e);return false}
+ }
+ function restoreCampaign(){
+   try{
+     const json=window.localStorage?.getItem(SAVE_KEY);
+     if(!json)return false;
+     const data=JSON.parse(json);
+     if(!data||data.version!==1||!Array.isArray(data.claims)||data.claims.length>MAP*MAP||!Array.isArray(data.squads)||data.squads.length>systems.PLAYER_CAP+systems.ENEMY_CAP+5)return false;
+     if(!Array.isArray(data.structures)||!Array.isArray(data.supply))return false;
+     if(!data.claims.some(v=>Array.isArray(v)&&v[1]==='player'))return false;
+     // Only clear the new scene after the save's basic structure has passed validation.
+     for(const a of [...armies])removeArmy(a);
+     plots.forEach(p=>{if(p.building)buildings.remove(p.building)});
+     plots.clear();supplyLines.clear();
+     tileMeshes.forEach(m=>scene.remove(m));
+     tileMeshes.clear();claims.clear();
+     const inside=(x,z)=>Number.isInteger(x)&&Number.isInteger(z)&&x>=0&&z>=0&&x<MAP&&z<MAP;
+     for(const record of data.claims){
+       if(!Array.isArray(record)||typeof record[0]!=='string')continue;
+       const [x,z]=record[0].split('-').map(Number);
+       if(!inside(x,z)||!['player','enemy'].includes(record[1]))continue;
+       if(record[1]==='player')addPlot(x,z);
+       else plotMesh(x,z,'enemy');
+     }
+     territory=[...claims.values()].filter(o=>o==='player').length;
+     for(const [id,type] of data.structures){
+       const p=plots.get(id);
+       if(p&&Object.hasOwn(defs,type)){p.type=type;building(p)}
+     }
+     for(const u of data.squads){
+       if(!u||!['player','enemy'].includes(u.owner)||!systems.types[u.type]||!inside(u.x,u.z))continue;
+       const count=Math.max(1,Math.min(250,Math.floor(Number(u.count)||1)));
+       army(u.owner,u.x,u.z,count,u.type);
+     }
+     for(const [id,line] of data.supply){
+       const plot=plots.get(id);
+       if(plot?.type!=='military'||!line||!systems.types[line.type])continue;
+       const dest=line.rally;
+       const rally=dest&&inside(dest.x,dest.z)&&own(dest.x,dest.z)?{x:dest.x,z:dest.z}:null;
+       supplyLines.set(id,{enabled:!!line.enabled&&!!rally,type:line.type,rally,shipments:Math.max(0,Math.floor(Number(line.shipments)||0))});
+     }
+     const values=data.resources||{};
+     for(const k of ['gold','food','wood','iron','oil','science','population']){
+       if(!Number.isFinite(values[k]))values[k]=0;
+     }
+     gold=Math.max(0,Math.min(1000000000,values.gold));food=Math.max(0,Math.min(1000000000,values.food));
+     wood=Math.max(0,Math.min(1000000000,values.wood));iron=Math.max(0,Math.min(1000000000,values.iron));
+     oil=Math.max(0,Math.min(1000000000,values.oil));science=Math.max(0,Math.min(1000000000,values.science));
+     population=Math.max(200,Math.min(1000000000,values.population));
+     gameSeconds=Math.max(0,Math.min(1000000,Math.floor(Number(data.gameSeconds)||0)));
+     waveNumber=Math.max(0,Math.min(10000,Math.floor(Number(data.waveNumber)||0)));
+     moving=false;selectedArmy=null;selectedPlot=null;commandMode=false;rallyPicking=null;
+     return true;
+   }catch(e){console.warn('Saved campaign could not be restored',e);return false}
+ }
  function canPay(c){return systems.resourcesCanPay(wallet(),c)}
  function pay(c){const w=wallet();if(!systems.applyCost(w,c))return false;changeWallet(w);return true}
  function hud(){
@@ -352,14 +422,23 @@ function boot(){
  $('moveOrder').onclick=()=>{if(!selectedArmy||moving)return;commandMode=true;$('orders').textContent='Move / Attack active. Click or tap a destination, even several tiles away.';hud()};
  $('cancelOrder').onclick=()=>{if(moving)return;selectPlot(null);$('orders').textContent='Order cancelled. Select a squad or plot.';};
  $('split').onclick=()=>{if(!selectedArmy||selectedArmy.userData.count<20){$('orders').textContent='Select an army with at least 20 troops.';return}if(!canPay({oil:2})&&!canPay({gold:14})){$('orders').textContent='Splitting a squad requires 2 oil or 14 cash.';return}const half=Math.floor(selectedArmy.userData.count/2),spots=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1]];let chosen=null;for(const[sx,sz]of spots){const x=selectedArmy.userData.x+sx,z=selectedArmy.userData.z+sz;if(x>=0&&x<MAP&&z>=0&&z<MAP&&!armies.some(a=>a.userData.x===x&&a.userData.z===z)){chosen={x,z};break}}if(!chosen){$('orders').textContent='No nearby space to split the army.';return}if(oil>=2)oil-=2;else gold-=14;selectedArmy.userData.count-=half;selectArmy(army('player',chosen.x,chosen.z,half,selectedArmy.userData.type));hud()};
- $('reset').onclick=()=>location.reload();
+ $('saveGame').onclick=()=>{$('orders').textContent=saveCampaign()?'Campaign saved on this device.':'Save unavailable in this browser.'};
+ $('reset').onclick=()=>{
+   if(!confirm('Start a new Nation Wars campaign? Your current local save will be replaced.'))return;
+   try{window.localStorage?.removeItem(SAVE_KEY)}catch(e){}
+   location.reload();
+ };
  renderer.domElement.addEventListener('click',e=>{if(!cam.consumeClick())click(e)});renderer.domElement.addEventListener('contextmenu',e=>{if(cam.consumeClick()){e.preventDefault();return}context(e)});
  // Mouse, touch and keyboard camera controls are owned by shared camera3d.js.
  addEventListener('keydown',e=>{
    if(e.target?.closest?.('input,textarea,select,[contenteditable]'))return;
    if(e.key.toLowerCase()==='r'&&!e.repeat&&!(e.ctrlKey||e.metaKey||e.altKey))location.reload();
  });
- addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);cam.update(performance.now())});cam.update(performance.now());hud();loading.classList.add('hidden');
+ addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);cam.update(performance.now())});
+ addEventListener('beforeunload',saveCampaign);
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)saveCampaign()});
+ cam.update(performance.now());hud();loading.classList.add('hidden');
+ if(loadedSave)$('orders').textContent='Saved campaign restored. Expand your nation and manage the front.';
  let last=performance.now();
  function economyTick(){
    gameSeconds++;
@@ -378,6 +457,7 @@ function boot(){
    if(gameSeconds%systems.WAVE_INTERVAL===0)spawnWave();
    if(gameSeconds%5===0)enemyTurn();
    if(gameSeconds%systems.AUTO_INTERVAL===0)processSupplyLines();
+   if(gameSeconds%10===0)saveCampaign();
    if(food===0&&gameSeconds%10===0)$('orders').textContent='Food shortage! Build farms to support your nation.';
    hud();
  }
