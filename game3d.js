@@ -34,7 +34,29 @@ function boot(){
  function adjacent(a,b){return Math.abs(a.x-b.x)<=1&&Math.abs(a.z-b.z)<=1&&!(a.x===b.x&&a.z===b.z)}
  function moveArmy(a,x,z){if(!adjacent(a.userData,{x,z})){$('orders').textContent='Move one tile at a time.';return}if(armies.some(q=>q!==a&&q.userData.owner==='player'&&q.userData.x===x&&q.userData.z===z)){$('orders').textContent='Another army is already there.';return}const from=a.position.clone(),to=pos(x,z),start=performance.now();function step(n){const t=clamp((n-start)/240,0,1),e=t*t*(3-2*t);a.position.lerpVectors(from,to,e);a.position.y=Math.sin(e*Math.PI)*.2;if(t<1)requestAnimationFrame(step);else{a.position.y=0;a.userData.x=x;a.userData.z=z;$('orders').textContent='Army moved.';hud()}}requestAnimationFrame(step)}
  function combat(a,d){if(!adjacent(a.userData,d.userData)){$('orders').textContent='That enemy army is too far away.';return}const p=a.userData.count,def=d.userData.count;a.userData.count=Math.max(0,p-Math.max(1,Math.floor(def*.2)));d.userData.count=Math.max(0,def-Math.max(1,Math.floor(p*.35)));if(d.userData.count===0){d.userData.owner='player';d.userData.count=Math.max(1,Math.floor(a.userData.count*.25));territory++;$('orders').textContent='Enemy army defeated and territory captured.'}else $('orders').textContent='Battle complete. Both armies took losses.';const c=d.userData.owner==='player'?PLAYER:ENEMY;d.children[0].material.color.set(c);hud()}
- function click(e){if(movedDuringDrag)return;for(const h of rayHits(e)){const o=h.object;if(o.userData.army){const a=o.userData.army;if(a.userData.owner==='player')selectArmy(a);return}if(o.userData.plot){const p=plots.get(o.userData.plot);if(p&&p.owner==='player')selectPlot(p);return}}const t=groundTile(e);if(t&&own(t.x,t.z))selectPlot(plots.get(key(t.x,t.z))||null);else if(!t)selectPlot(null)}
+ function click(e){
+  if(movedDuringDrag)return;
+  const touch=window.matchMedia('(pointer:coarse)').matches;
+  for(const h of rayHits(e)){
+    const o=h.object;
+    if(o.userData.army){
+      const a=o.userData.army;
+      if(a.userData.owner==='player'){selectArmy(a);return}
+      if(touch&&selectedArmy&&a.userData.owner==='enemy'){combat(selectedArmy,a);return}
+      return;
+    }
+    if(o.userData.plot){
+      const p=plots.get(o.userData.plot);
+      if(touch&&selectedArmy){const t=groundTile(e);if(t){moveArmy(selectedArmy,t.x,t.z);return}}
+      if(p&&p.owner==='player')selectPlot(p);
+      return;
+    }
+  }
+  const t=groundTile(e);
+  if(touch&&selectedArmy&&t){moveArmy(selectedArmy,t.x,t.z);return}
+  if(t&&own(t.x,t.z))selectPlot(plots.get(key(t.x,t.z))||null);
+  else if(!t)selectPlot(null);
+}
  function context(e){e.preventDefault();if(movedDuringDrag)return;if(!selectedArmy)return;for(const h of rayHits(e)){if(h.object.userData.army){const a=h.object.userData.army;if(a.userData.owner==='enemy'){combat(selectedArmy,a);return}}}const t=groundTile(e);if(t)moveArmy(selectedArmy,t.x,t.z)}
  document.querySelectorAll('[data-build]').forEach(b=>b.onclick=()=>{if(!selectedPlot||selectedPlot.type)return;const type=b.dataset.build,d=defs[type];if(!canPay(d.cost)){$('orders').textContent='Not enough resources.';return}pay(d.cost);selectedPlot.type=type;building(selectedPlot);$('orders').textContent=`${d.name} built.`;hud()});
  $('split').onclick=()=>{if(!selectedArmy||selectedArmy.userData.count<20){$('orders').textContent='Select an army with at least 20 troops.';return}const half=Math.floor(selectedArmy.userData.count/2),spots=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1]];let chosen=null;for(const[sx,sz]of spots){const x=selectedArmy.userData.x+sx,z=selectedArmy.userData.z+sz;if(x>=0&&x<MAP&&z>=0&&z<MAP&&!armies.some(a=>a.userData.x===x&&a.userData.z===z)){chosen={x,z};break}}if(!chosen){$('orders').textContent='No nearby space to split the army.';return}selectedArmy.userData.count-=half;selectArmy(army('player',chosen.x,chosen.z,half));hud()};
