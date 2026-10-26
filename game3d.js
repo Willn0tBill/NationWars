@@ -79,9 +79,39 @@ function boot(){
  army('player',4,18,80,'infantry');army('player',6,19,55,'recon');army('enemy',18,5,75,'infantry');army('enemy',20,6,50,'armor');army('enemy',17,3,40,'recon');
  function canPay(c){return systems.resourcesCanPay(wallet(),c)}
  function pay(c){const w=wallet();if(!systems.applyCost(w,c))return false;changeWallet(w);return true}
- function hud(){ $('gold').textContent=Math.floor(gold).toLocaleString();$('food').textContent=Math.floor(food).toLocaleString();$('wood').textContent=Math.floor(wood).toLocaleString();$('iron').textContent=Math.floor(iron).toLocaleString();$('science').textContent=Math.floor(science).toLocaleString();$('population').textContent=Math.floor(population).toLocaleString();$('selection').textContent=selectedArmy?`Army selected · ${selectedArmy.userData.count} troops · ${selectedArmy.userData.x+1}, ${selectedArmy.userData.z+1}`:selectedPlot?`Plot selected · ${selectedPlot.x+1}, ${selectedPlot.z+1}`:'Select an army or plot.';if(selectedPlot){const d=selectedPlot.type?defs[selectedPlot.type]:null;$('plotInfo').textContent=d?`${d.name} · produces ${d.food||0} food, ${d.gold||0} gold, ${d.iron||0} iron, ${d.science||0} science per tick.`:'Empty development plot · choose a building.'}else $('plotInfo').textContent='No plot selected.';document.querySelectorAll('[data-build]').forEach(b=>{const d=defs[b.dataset.build];b.disabled=!selectedPlot||!!selectedPlot.type||!canPay(d.cost)});if($('moveOrder')){$('moveOrder').disabled=!selectedArmy||moving;$('moveOrder').setAttribute('aria-pressed',String(commandMode&&!!selectedArmy));}if($('cancelOrder'))$('cancelOrder').disabled=!selectedArmy||moving;if($('split'))$('split').disabled=!selectedArmy||moving||selectedArmy.userData.count<20;}
+ function hud(){
+   const put=(id,value)=>{const el=$(id);if(el)el.textContent=String(value)};
+   for(const[k,v]of Object.entries({gold,food,wood,iron,oil,science,population}))put(k,Math.floor(v).toLocaleString());
+   put('territoryCount',territory);
+   put('enemyCount',alive('enemy').length);
+   put('waveClock',Math.max(0,systems.WAVE_INTERVAL-gameSeconds%systems.WAVE_INTERVAL)+'s');
+   put('selection',selectedArmy?`${systems.types[selectedArmy.userData.type]?.label||'Squad'} · ${selectedArmy.userData.count} units · ${selectedArmy.userData.x+1},${selectedArmy.userData.z+1}`:selectedPlot?`Plot ${selectedPlot.x+1},${selectedPlot.z+1} · ${selectedPlot.type?defs[selectedPlot.type]?.name:'Empty'}`:'Select an army or plot.');
+   if(selectedPlot){
+     const d=selectedPlot.type?defs[selectedPlot.type]:null;
+     put('plotInfo',d?`${d.name} · ${Object.entries(d).filter(([k,v])=>typeof v==='number').map(([k,v])=>v+' '+k).join(' · ')} each second.`:'Empty development plot · choose a building.');
+   }else put('plotInfo','Choose a friendly territory to develop.');
+   document.querySelectorAll('[data-build]').forEach(b=>{
+     const def=defs[b.dataset.build];b.disabled=!selectedPlot||!!selectedPlot.type||!canPay(def.cost);
+   });
+   if($('moveOrder')){$('moveOrder').disabled=!selectedArmy||moving;$('moveOrder').setAttribute('aria-pressed',String(commandMode&&!!selectedArmy))}
+   if($('cancelOrder'))$('cancelOrder').disabled=!selectedArmy||moving;
+   if($('split'))$('split').disabled=!selectedArmy||moving||selectedArmy.userData.count<20;
+   const select=$('trainUnit'),train=$('recruitBtn'),barrack=selectedPlot?.type==='military'?selectedPlot:null,type=select?.value||'infantry';
+   const price=systems.trainingCost(type);
+   put('trainCost',systems.formattedCost(price));
+   if(train)train.disabled=!barrack||!canPay(price)||alive('player').length>=systems.PLAYER_CAP||!freeSpawn(barrack);
+   if($('barracksSelect'))$('barracksSelect').disabled=!barracks().length;
+   const unlocked=supplyUnlocked();
+   const unlockText=unlocked?'UNLOCKED':`Requires ${systems.AUTO_TERRITORY} territories (${territory}), ${systems.AUTO_SCIENCE} science (${Math.floor(science)}), and 2 barracks (${barracks().length}).`;
+   put('automationInfo',unlockText);
+   const line=barrack?supplyLines.get(key(barrack.x,barrack.z)):null;
+   if($('supplyToggle')){$('supplyToggle').disabled=!barrack||!unlocked;$('supplyToggle').textContent=line?.enabled?'Pause Supply Line':'Enable Supply Line'}
+   if($('setRally'))$('setRally').disabled=!barrack||!unlocked;
+   put('supplyStatus',line?`${line.enabled?'Active':'Paused'} · ${systems.types[line.type]?.label||'Infantry'} · ${line.rally?`Rally ${line.rally.x+1},${line.rally.z+1}`:'No rally tile'} · ${line.shipments||0} shipment(s)`:'Select a barracks to configure a supply line.');
+   put('supplyCount',[...supplyLines.values()].filter(line=>line.enabled).length);
+ }
  function selectArmy(a){if(moving)return;armies.forEach(q=>{const r=q.getObjectByName('selection');if(r)r.visible=false});selectedArmy=a;selectedPlot=null;commandMode=true;const r=a.getObjectByName('selection');if(r)r.visible=true;$('orders').textContent='Squad selected. Click or tap any destination to march there. Select an enemy squad to approach and attack.';hud()}
- function selectPlot(p){if(moving)return;armies.forEach(q=>{const r=q.getObjectByName('selection');if(r)r.visible=false});selectedArmy=null;commandMode=false;selectedPlot=p;if(p)$('orders').textContent=p.type?'This plot is already developed.':'Choose a building.';hud()}
+ function selectPlot(p){if(moving)return;armies.forEach(q=>{const r=q.getObjectByName('selection');if(r)r.visible=false});selectedArmy=null;commandMode=false;selectedPlot=p;if(p)$('orders').textContent=p.type==='military'?'Barracks selected. Recruit a unit or configure a supply line.':p.type?'This plot is already developed.':'Choose a building.';hud()}
  function rayHits(e){const r=renderer.domElement.getBoundingClientRect();mouse.x=(e.clientX-r.left)/r.width*2-1;mouse.y=-(e.clientY-r.top)/r.height*2+1;ray.setFromCamera(mouse,camera);return ray.intersectObjects(scene.children,true)}
  function groundTile(e){const r=renderer.domElement.getBoundingClientRect();mouse.x=(e.clientX-r.left)/r.width*2-1;mouse.y=-(e.clientY-r.top)/r.height*2+1;ray.setFromCamera(mouse,camera);const point=ray.ray.intersectPlane(new T.Plane(new T.Vector3(0,1,0),0),new T.Vector3());return point?tilePoint(point):null}
 
@@ -239,6 +269,15 @@ function boot(){
  }
  function click(e){
    if(moving)return;
+   if(rallyPicking){
+     const tile=groundTile(e);
+     if(!tile){$('orders').textContent='Select a valid tile on the map for your rally point.';return}
+     if(!own(tile.x,tile.z)){$('orders').textContent='Supply rally points must be inside your controlled territory.';return}
+     const line=supplyLines.get(rallyPicking)||{enabled:false,type:$('trainUnit')?.value||'infantry',shipments:0};
+     line.rally=tile;supplyLines.set(rallyPicking,line);rallyPicking=null;
+     $('orders').textContent=`Rally point set to ${tile.x+1}, ${tile.z+1}. Enable the supply line to start automatic training.`;
+     hud();return;
+   }
    const hits=rayHits(e);
    const armyHit=hits.find(h=>h.object.userData.army)?.object.userData.army;
    if(armyHit?.userData.owner==='player'){selectArmy(armyHit);return}
@@ -266,9 +305,40 @@ function boot(){
    if(target)issueOrder(target.x,target.z);
  }
  document.querySelectorAll('[data-build]').forEach(b=>b.onclick=()=>{if(!selectedPlot||selectedPlot.type)return;const type=b.dataset.build,d=defs[type];if(!canPay(d.cost)){$('orders').textContent='Not enough resources.';return}pay(d.cost);selectedPlot.type=type;building(selectedPlot);$('orders').textContent=`${d.name} built.`;hud()});
+ $('barracksSelect').onclick=()=>{
+   const list=barracks();if(!list.length){$('orders').textContent='Build a Military Barracks first.';return}
+   selectPlot(list[0]);
+   $('trainingSection')?.scrollIntoView?.({behavior:'smooth',block:'nearest'});
+ };
+ $('trainUnit').onchange=()=>{
+   if(selectedPlot?.type==='military'){
+     const id=key(selectedPlot.x,selectedPlot.z),line=supplyLines.get(id);
+     if(line)line.type=$('trainUnit').value;
+   }
+   hud();
+ };
+ $('recruitBtn').onclick=()=>{
+   const result=trainAt(selectedPlot,$('trainUnit').value,false);
+   $('orders').textContent=result.error||`${systems.types[$('trainUnit').value].label} trained at the Military Barracks. Click the new squad to command it.`;
+   hud();
+ };
+ $('setRally').onclick=()=>{
+   if(!selectedPlot||selectedPlot.type!=='military'||!supplyUnlocked())return;
+   rallyPicking=key(selectedPlot.x,selectedPlot.z);
+   $('orders').textContent='Rally selection: click a friendly tile to deliver new units automatically.';
+ };
+ $('supplyToggle').onclick=()=>{
+   if(!selectedPlot||selectedPlot.type!=='military'||!supplyUnlocked())return;
+   const id=key(selectedPlot.x,selectedPlot.z);
+   const line=supplyLines.get(id)||{enabled:false,type:$('trainUnit').value,rally:null,shipments:0};
+   if(!line.enabled&&!line.rally){$('orders').textContent='Set a rally tile before enabling your supply line.';return}
+   line.enabled=!line.enabled;line.type=$('trainUnit').value;supplyLines.set(id,line);
+   $('orders').textContent=line.enabled?`Automated ${systems.types[line.type].label} shipments enabled. Training costs 2× resources; delivery consumes oil or cash.`:'Supply line paused.';
+   hud();
+ };
  $('moveOrder').onclick=()=>{if(!selectedArmy||moving)return;commandMode=true;$('orders').textContent='Move / Attack active. Click or tap a destination, even several tiles away.';hud()};
  $('cancelOrder').onclick=()=>{if(moving)return;selectPlot(null);$('orders').textContent='Order cancelled. Select a squad or plot.';};
- $('split').onclick=()=>{if(!selectedArmy||selectedArmy.userData.count<20){$('orders').textContent='Select an army with at least 20 troops.';return}const half=Math.floor(selectedArmy.userData.count/2),spots=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1]];let chosen=null;for(const[sx,sz]of spots){const x=selectedArmy.userData.x+sx,z=selectedArmy.userData.z+sz;if(x>=0&&x<MAP&&z>=0&&z<MAP&&!armies.some(a=>a.userData.x===x&&a.userData.z===z)){chosen={x,z};break}}if(!chosen){$('orders').textContent='No nearby space to split the army.';return}selectedArmy.userData.count-=half;selectArmy(army('player',chosen.x,chosen.z,half));hud()};
+ $('split').onclick=()=>{if(!selectedArmy||selectedArmy.userData.count<20){$('orders').textContent='Select an army with at least 20 troops.';return}if(!canPay({oil:2})&&!canPay({gold:14})){$('orders').textContent='Splitting a squad requires 2 oil or 14 cash.';return}const half=Math.floor(selectedArmy.userData.count/2),spots=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1]];let chosen=null;for(const[sx,sz]of spots){const x=selectedArmy.userData.x+sx,z=selectedArmy.userData.z+sz;if(x>=0&&x<MAP&&z>=0&&z<MAP&&!armies.some(a=>a.userData.x===x&&a.userData.z===z)){chosen={x,z};break}}if(!chosen){$('orders').textContent='No nearby space to split the army.';return}if(oil>=2)oil-=2;else gold-=14;selectedArmy.userData.count-=half;selectArmy(army('player',chosen.x,chosen.z,half,selectedArmy.userData.type));hud()};
  $('reset').onclick=()=>location.reload();
  renderer.domElement.addEventListener('click',e=>{if(!cam.consumeClick())click(e)});renderer.domElement.addEventListener('contextmenu',e=>{if(cam.consumeClick()){e.preventDefault();return}context(e)});
  // Mouse, touch and keyboard camera controls are owned by shared camera3d.js.
