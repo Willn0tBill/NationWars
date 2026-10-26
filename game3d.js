@@ -347,7 +347,38 @@ function boot(){
    if(e.key.toLowerCase()==='r'&&!e.repeat&&!(e.ctrlKey||e.metaKey||e.altKey))location.reload();
  });
  addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);cam.update(performance.now())});cam.update(performance.now());hud();loading.classList.add('hidden');
- let last=performance.now();function loop(n=performance.now()){requestAnimationFrame(loop);if(n-last>=1000){last=n;let farm=0,mi=0,fac=0,res=0,mil=0,hosp=0,market=0;plots.forEach(p=>{if(!p.type)return;const d=defs[p.type];farm+=d.food||0;mi+=d.iron||0;fac+=d.gold||0;res+=d.science||0;mil+=d.troops||0;hosp+=d.pop||0;market+=d.gold||0});const use=Math.max(8,Math.floor(population/160))+mil;food+=farm-use;wood+=2;iron+=mi-2;gold+=8+fac+market;science+=res;population=Math.max(200,population+Math.floor(hosp/80)-Math.floor(Math.max(0,use-farm)/20));if(food<0){food=0;$('orders').textContent='Food shortage! Build more farms.'}armies.filter(a=>a.userData.owner==='player').forEach(a=>a.userData.count=Math.min(150,a.userData.count+mil));hud()}cam.update(n);renderer.render(scene,camera)}loop()
+ let last=performance.now();
+ function economyTick(){
+   gameSeconds++;
+   let foodRate=0,ironRate=0,cashRate=0,scienceRate=0,oilRate=0,popRate=0;
+   plots.forEach(p=>{
+     if(!own(p.x,p.z)||!p.type)return;
+     const d=defs[p.type];foodRate+=d.food||0;ironRate+=d.iron||0;
+     cashRate+=d.gold||0;scienceRate+=d.science||0;oilRate+=d.oil||0;popRate+=d.pop||0;
+   });
+   const foodUse=Math.max(6,Math.floor(population/180))+Math.ceil(alive('player').reduce((sum,a)=>sum+a.userData.count,0)/150);
+   food=Math.max(0,food+foodRate-foodUse);
+   iron=Math.max(0,iron+ironRate-2);
+   wood+=3;gold=Math.max(0,gold+10+cashRate);oil=Math.max(0,oil+oilRate);
+   science=Math.max(0,science+scienceRate);
+   population=Math.max(200,population+Math.floor(popRate/80)-(food===0?8:0));
+   if(gameSeconds%systems.WAVE_INTERVAL===0)spawnWave();
+   if(gameSeconds%5===0)enemyTurn();
+   if(gameSeconds%systems.AUTO_INTERVAL===0)processSupplyLines();
+   if(food===0&&gameSeconds%10===0)$('orders').textContent='Food shortage! Build farms to support your nation.';
+   hud();
+ }
+ function loop(now=performance.now()){
+   requestAnimationFrame(loop);
+   // Limit catch-up work when a background tab resumes.
+   if(now-last>=1000){
+     const elapsed=Math.min(3,Math.floor((now-last)/1000));
+     last=now;
+     for(let i=0;i<elapsed;i++)economyTick();
+   }
+   cam.update(now);renderer.render(scene,camera);
+ }
+ loop()
 }
 try{if(window.THREE)boot();else{fail('Loading 3D engine…');const s=document.createElement('script');s.src='https://unpkg.com/three@0.160.0/build/three.min.js';s.onload=()=>{try{boot()}catch(e){console.error(e);fail('Could not start the 3D game. Try refreshing.')}};s.onerror=()=>fail('The 3D engine could not load. Check your connection and refresh.');document.head.appendChild(s)}}catch(e){console.error(e);fail('3D game failed to start. Refresh the page.')}
 })();
