@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Domination - Global Leaderboard</title>
+    <title>Nation Wars — Local Leaderboard</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="leaderboard-page">
     <div class="container">
         <header>
-            <h1><i class="fas fa-trophy"></i> DOMINATION GLOBAL LEADERBOARD</h1>
-            <p class="subtitle">Top Scores from Players Worldwide</p>
+            <h1><i class="fas fa-trophy"></i> NATION WARS LEADERBOARD</h1>
+            <p class="subtitle">Your best Nation Wars matches, saved on this device</p>
         </header>
         
         <div class="leaderboard-container">
@@ -23,11 +23,11 @@
                     <button class="tab-btn active" data-period="alltime" onclick="changeTab('alltime')">
                         All-Time Top 100
                     </button>
-                    <button class="tab-btn" data-period="domination" onclick="changeTab('domination')">
-                        Domination Mode
+                    <button class="tab-btn" data-period="practice" onclick="changeTab('practice')">
+                        Practice Mode
                     </button>
-                    <button class="tab-btn" data-period="bots" onclick="changeTab('bots')">
-                        Bots Battle
+                    <button class="tab-btn" data-period="legacy" onclick="changeTab('legacy')">
+                        Legacy Scores
                     </button>
                 </div>
             </div>
@@ -50,7 +50,7 @@
                 <div class="no-scores" id="noScoresMessage" style="display: none;">
                     <i class="fas fa-chart-bar"></i>
                     <h3>No Scores Yet</h3>
-                    <p>Play Domination mode to appear on the leaderboard!</p>
+                    <p>Finish a 2D practice match to save your score here.</p>
                     <button class="play-now-btn" onclick="goToMenu()">
                         <i class="fas fa-play"></i> Play Now
                     </button>
@@ -63,10 +63,10 @@
                     <p>Scores are calculated based on:</p>
                     <ul>
                         <li>Territory controlled</li>
-                        <li>Bots defeated</li>
+                        <li>Opposing territories captured</li>
                         <li>Time survived</li>
-                        <li>Difficulty multiplier</li>
-                        <li>Waves completed (Domination)</li>
+                        <li>Game mode</li>
+                        <li>Match results</li>
                     </ul>
                     <p><strong>Note:</strong> Leaderboard saves locally. For a truly global leaderboard, a server backend would be needed.</p>
                 </div>
@@ -74,11 +74,11 @@
                 <div class="info-card">
                     <h3><i class="fas fa-medal"></i> Score Tips</h3>
                     <ul>
-                        <li>Play on higher difficulties for multipliers</li>
-                        <li>Survive longer in Domination mode</li>
+                        <li>Expand your territory carefully</li>
+                        <li>Keep your cities productive</li>
                         <li>Control more territory</li>
                         <li>Defeat bots for bonus points</li>
-                        <li>Complete waves in Domination mode</li>
+                        <li>Finish your matches to record your scores</li>
                     </ul>
                 </div>
             </div>
@@ -86,7 +86,7 @@
         
         <footer>
             <p>© 2026 Whatever Studios. All rights reserved.</p>
-            <p>Domination - Global leaderboard scores are shared across all players on this device.</p>
+            <p>Nation Wars leaderboard scores are stored on this device only.</p>
         </footer>
     </div>
 
@@ -115,13 +115,14 @@
             const leaderboardBody = document.getElementById('leaderboardBody');
             const noScoresMessage = document.getElementById('noScoresMessage');
             
-            // Get leaderboard from localStorage
-            let leaderboard = JSON.parse(localStorage.getItem('dominationLeaderboard')) || [];
-            
-            // Filter by mode if needed
-            if (period !== 'alltime') {
-                leaderboard = leaderboard.filter(entry => entry.mode === period);
-            }
+            // Merge current game scores and older Domination scores without
+            // claiming these are global or shared with other devices.
+            let current=[], legacy=[];
+            try {const v=JSON.parse(localStorage.getItem('nationWarsScores')||'[]');current=Array.isArray(v)?v:[]}catch(e){}
+            try {const v=JSON.parse(localStorage.getItem('dominationLeaderboard')||'[]');legacy=Array.isArray(v)?v.map(e=>({...e,source:'legacy'})):[]}catch(e){}
+            let leaderboard=[...current,...legacy].filter(e=>e&&Number.isFinite(Number(e.score)));
+            if(period==='practice')leaderboard=leaderboard.filter(e=>e.mode==='practice');
+            if(period==='legacy')leaderboard=leaderboard.filter(e=>e.source==='legacy');
             
             // Sort by score (descending)
             leaderboard.sort((a, b) => b.score - a.score);
@@ -153,19 +154,19 @@
                 
                 // Format date
                 const date = new Date(entry.date);
-                const formattedDate = date.toLocaleDateString('en-US', {
+                const formattedDate = Number.isFinite(date.getTime()) ? date.toLocaleDateString('en-US', {
                     month: 'short',
                     day: 'numeric',
                     year: 'numeric'
-                });
+                }) : '—';
                 
                 // Format difficulty
                 const difficultyText = getDifficultyText(entry.difficulty);
                 
                 row.innerHTML = `
                     <div class="rank-col ${rankClass}">${index + 1}</div>
-                    <div class="player-col ${rankClass}">${entry.player}</div>
-                    <div class="score-col">${entry.score.toLocaleString()}</div>
+                    <div class="player-col ${rankClass}">${escapeHtml(entry.player||"Commander")}</div>
+                    <div class="score-col">${Number(entry.score||0).toLocaleString()}</div>
                     <div class="mode-col">${getModeName(entry.mode)}</div>
                     <div class="difficulty-col">${difficultyText}</div>
                     <div class="date-col">${formattedDate}</div>
@@ -190,11 +191,18 @@
         // Get mode name
         function getModeName(mode) {
             switch(mode) {
-                case 'domination': return 'Domination';
+                case 'practice': return '2D Practice';
+                case 'domination': return 'Legacy Domination';
                 case 'bots': return 'Bots Battle';
                 case '1v1': return '1v1 Duel';
-                default: return 'Unknown';
+                default: return 'Legacy';
             }
+        }
+
+        function escapeHtml(value) {
+            return String(value).replace(/[&<>"']/g, char => ({
+                '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+            }[char]));
         }
 
         // Initialize
