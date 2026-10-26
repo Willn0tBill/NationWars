@@ -13,7 +13,7 @@ function create({camera, renderer, initial={}, bounds=31, buttons={}}){
   const controller={
     reset(){Object.assign(target,home);keys.clear();},
     zoomBy(amount){target.zoom=clamp(target.zoom*Math.exp(amount),12,90);},
-    consumeClick(){return Date.now()<suppressUntil||gesture!=='none';},
+    consumeClick(){return Date.now()<suppressUntil||dragged;},
     update(now){
       if(disposed)return;
       const dt=lastFrame?clamp((now-lastFrame)/1000,0,.05):1/60;lastFrame=now;
