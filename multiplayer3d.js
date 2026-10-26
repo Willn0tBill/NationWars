@@ -1,10 +1,10 @@
 (()=>{'use strict';
-const SERVER=window.NW_SERVER_URL||new URLSearchParams(location.search).get('server')||'wss://nationwars.onrender.com/ws', $=id=>document.getElementById(id),mount=$('game');let T=window.THREE,scene,camera,renderer,ray,mouse,ws,state=null,myId=null,selected=null,drag=false,lx=0,ly=0,yaw=.15,pitch=.9,dist=43,retry=0;const art=window.NationWarsVisuals;let world=null;
+const SERVER=window.NW_SERVER_URL||new URLSearchParams(location.search).get('server')||'wss://nationwars.onrender.com/ws', $=id=>document.getElementById(id),mount=$('game');let T=window.THREE,scene,camera,renderer,ray,mouse,ws,state=null,myId=null,selected=null,drag=false,lx=0,ly=0,yaw=.15,pitch=.9,dist=43,retry=0;const art=window.NationWarsVisuals;let world=null,cam=null;
 function status(x){$('status').textContent=x}function fail(x){status(x)}
 function start(){if(!T||!art){fail('3D engine or visual assets did not load. Refresh the page.');return}try{init()}catch(e){console.error(e);fail('3D multiplayer failed to start. Refresh the page.')}}
 if(!T){status('Loading 3D engine…');let s=document.createElement('script');s.src='https://unpkg.com/three@0.160.0/build/three.min.js';s.onload=()=>{T=window.THREE;start()};s.onerror=()=>fail('Could not load the 3D engine.');document.head.appendChild(s)}else start();
 function init(){
- scene=new T.Scene();camera=new T.PerspectiveCamera(50,innerWidth/innerHeight,.1,220);renderer=new T.WebGLRenderer({antialias:false,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio||1,matchMedia('(pointer:coarse)').matches?1.1:1.5));renderer.setSize(innerWidth,innerHeight);renderer.domElement.style.touchAction='none';mount.replaceChildren(renderer.domElement);ray=new T.Raycaster();mouse=new T.Vector2();art.atmosphere(T,scene,renderer,true);events();cameraUpdate();connect();loop()}
+ scene=new T.Scene();camera=new T.PerspectiveCamera(50,innerWidth/innerHeight,.1,220);renderer=new T.WebGLRenderer({antialias:false,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio||1,matchMedia('(pointer:coarse)').matches?1.1:1.5));renderer.setSize(innerWidth,innerHeight);renderer.domElement.style.touchAction='none';mount.replaceChildren(renderer.domElement);ray=new T.Raycaster();mouse=new T.Vector2();art.atmosphere(T,scene,renderer,true);cam=window.NationWarsCamera.create({camera,renderer,initial:{x:0,z:0,yaw:.18,pitch:.9,zoom:43},bounds:34,buttons:{zoomIn:'zoomIn',zoomOut:'zoomOut',reset:'resetView'}});events();connect();loop()}
  function connect(){if(ws&&ws.readyState===1)return;status(retry?'Reconnecting to multiplayer server…':'Connecting to multiplayer server…');try{ws=new WebSocket(SERVER)}catch(e){schedule();return}ws.onopen=()=>{retry=0;status('Connected. Create a room or join with a code.')};ws.onerror=()=>status('Server connection failed. Retrying…');ws.onclose=()=>{status('Disconnected. Retrying…');schedule()};ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}if(m.type==='error'){status(m.message||'Server error');return}if(m.type==='created'||m.type==='joined'){myId=m.you;$('roomOut').textContent=m.room;if($('lobbyRoom'))$('lobbyRoom').textContent=m.room;if($('readyLobby'))$('readyLobby').disabled=false;status('Room '+m.room+' ready. Share the code and ready up when everyone has joined.')}if(m.type==='lobby'){
   $('roomOut').textContent=m.room;
   if($('lobbyRoom'))$('lobbyRoom').textContent=m.room;
@@ -108,7 +108,7 @@ function draw(){
 }
  function tileFrom(e){let r=renderer.domElement.getBoundingClientRect();mouse.x=(e.clientX-r.left)/r.width*2-1;mouse.y=-(e.clientY-r.top)/r.height*2+1;ray.setFromCamera(mouse,camera);for(const h of ray.intersectObjects(scene.children,true)){if(h.object.userData.instanceToId&&Number.isInteger(h.instanceId))return h.object.userData.instanceToId[h.instanceId];if(h.object.userData.id&&h.object.userData.id!=='ground')return h.object.userData.id;}return null}
  function adjacent(a,b){let [ar,ac]=a.split('-').map(Number),[br,bc]=b.split('-').map(Number);if(Math.abs(ar-br)>1)return false;if(ar===br)return Math.abs(ac-bc)===1;let allowed=(ar%2===0)?[ac-1,ac]:[ac,ac+1];return Math.abs(ar-br)===1&&allowed.includes(bc)}
- function click(e){if(drag){drag=false;return}if(!state)return;let id=tileFrom(e);if(!id||!state.tiles[id])return;let t=state.tiles[id];if(t.owner===myId){selected=id;$('selected').textContent=`Selected territory ${id} · ${t.troops} troops`;$('help').textContent='Right-click an adjacent territory to move or attack.';highlight()}else if(selected)order(id)}
+ function click(e){if(cam.consumeClick()||!state)return;let id=tileFrom(e);if(!id||!state.tiles[id])return;let t=state.tiles[id];if(t.owner===myId){selected=id;$('selected').textContent=`Selected territory ${id} · ${t.troops} troops`;$('help').textContent='Right-click an adjacent territory to move or attack.';highlight()}else if(selected)order(id)}
  function order(to){let from=selected,t=state.tiles[from];if(!t||t.owner!==myId)return;if(!adjacent(from,to)){$('help').textContent='That territory is not adjacent.';return}if(t.troops<2){$('help').textContent='This territory needs more troops before moving.';return}let amount=Math.max(1,Math.floor(t.troops*.6));send({type:'action',from,to,amount});$('help').textContent='Order sent. Waiting for server update.'}
  function highlight(){
   if(!world)return;
@@ -116,7 +116,6 @@ function draw(){
   if(world.ring.visible){const p=pof(selected,world.size);world.ring.position.set(p.x,.32,p.z)}
  }
  function hud(){if(!state)return;let mine=Object.values(state.tiles).filter(t=>t.owner===myId);$('territory').textContent=mine.length;$('troops').textContent=mine.reduce((s,t)=>s+t.troops,0);let sec=state.time||0;$('time').textContent=String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0');if(selected&&!state.tiles[selected]){selected=null;$('selected').textContent='Select one of your territories.'}}
- function cameraUpdate(){let h=Math.cos(pitch)*dist;camera.position.set(Math.sin(yaw)*h,Math.sin(pitch)*dist,Math.cos(yaw)*h);camera.lookAt(0,0,0)}
  function events(){
   $('create').onclick=()=>send({type:'create',name:$('name').value.trim()||'Commander',settings:{mapSize:24,gameLength:30}});
   if($('readyLobby'))$('readyLobby').onclick=()=>{
@@ -125,9 +124,8 @@ function draw(){
     send({type:'ready',ready});
     $('readyLobby').textContent=ready?'Not Ready':'Ready Up';
   };$('join').onclick=()=>{let room=$('room').value.trim().toUpperCase();if(!room){status('Enter a room code first.');return}send({type:'join',name:$('name').value.trim()||'Commander',room})};$('ready').onclick=()=>send({type:'ready',ready:true});$('back').onclick=()=>{try{if(ws)ws.close()}catch{}location.href='index.html'};
-  renderer.domElement.addEventListener('click',click);renderer.domElement.addEventListener('contextmenu',e=>{e.preventDefault();if(state&&selected){let id=tileFrom(e);if(id)order(id)}});
-  renderer.domElement.addEventListener('pointerdown',e=>{
-    drag=false;lx=e.clientX;ly=e.clientY;
-    if(e.button===1||(e.button===0&&e.shiftKey))renderer.domElement.setPointerCapture?.(e.pointerId);
-  });renderer.domElement.addEventListener('pointermove',e=>{if((e.buttons&4)||(e.buttons&1&&e.shiftKey)){let dx=e.clientX-lx,dy=e.clientY-ly;if(Math.abs(dx)+Math.abs(dy)>3)drag=true;yaw-=dx*.006;pitch=Math.max(.48,Math.min(1.18,pitch+dy*.004));cameraUpdate();lx=e.clientX;ly=e.clientY}});renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();dist=Math.max(17,Math.min(58,dist+e.deltaY*.025));cameraUpdate()},{passive:false});addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)})}
- function loop(){requestAnimationFrame(loop);renderer.render(scene,camera)}})();
+  renderer.domElement.addEventListener('click',click);renderer.domElement.addEventListener('contextmenu',e=>{e.preventDefault();if(cam.consumeClick())return;if(state&&selected){let id=tileFrom(e);if(id)order(id)}});
+  // Camera interaction is handled centrally so practice and multiplayer behave alike.
+  addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);cam.update(performance.now())});
+}
+ function loop(now){requestAnimationFrame(loop);cam.update(now||performance.now());renderer.render(scene,camera)}})();
