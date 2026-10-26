@@ -143,6 +143,16 @@ function building(T,type){
       add(.37,.46,.6,m.timber,x,.46,.1);
       const roofShape=mesh(T,new T.ConeGeometry(.43,.35,4),i%2?m.red:m.canvas,x,.91,.1);roofShape.rotation.y=Math.PI/4;g.add(roofShape);
     }
+  }else if(type==='refinery'){
+    add(1.65,.2,1.42,m.stone,0,.26,0);
+    for(let i=0;i<3;i++){
+      const x=-.55+i*.52;
+      column(T,g,.23,.72,m.wall,x,.76,-.2,16);
+      column(T,g,.24,.08,m.blue,x,1.15,-.2,16);
+    }
+    column(T,g,.13,1.6,m.timber,.62,1.07,.48,12);
+    column(T,g,.18,.12,m.ink,.62,1.91,.48,12);
+    add(.89,.11,.13,m.gold,.04,.7,.58);
   }else if(type==='hospital'){
     add(1.25,.83,1.13,m.wall,0,.64,0);add(1.37,.11,1.22,m.blue,0,1.12,0);
     add(.12,.5,.06,m.red,0,.78,.596);add(.42,.12,.07,m.red,0,.79,.599);
@@ -151,7 +161,32 @@ function building(T,type){
   g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
   return g;
 }
-function army(T,color,count,compact=false){
+function army(T,color,count,compact=false,type='infantry'){
+  const m=materials(T);
+  if(type==='armor'){
+    const g=new T.Group(),c=new T.MeshStandardMaterial({color,metalness:.45,roughness:.52});
+    cube(T,g,1.05,.27,.72,m.ink,0,.28,0);
+    cube(T,g,.87,.28,.6,c,0,.5,0);
+    cube(T,g,.36,.26,.36,c,0,.75,0);
+    cube(T,g,.11,.12,.78,m.ink,0,.73,-.52);
+    for(const side of [-1,1]){
+      cube(T,g,.16,.22,.76,m.timber,side*.51,.26,0);
+      for(let z=-.27;z<=.27;z+=.27)column(T,g,.085,.05,m.ink,side*.57,.18,z,10);
+    }
+    return g;
+  }
+  if(type==='artillery'){
+    const g=new T.Group(),c=new T.MeshStandardMaterial({color,roughness:.67,metalness:.28});
+    cube(T,g,.94,.18,.55,m.ink,0,.23,0);
+    cube(T,g,.56,.22,.52,c,0,.4,0);
+    const gun=mesh(T,new T.CylinderGeometry(.085,.11,1.12,12),m.stone,0,.62,-.48);
+    gun.rotation.x=Math.PI/2-.11;g.add(gun);
+    for(const side of [-1,1]){
+      const wheel=mesh(T,new T.CylinderGeometry(.22,.22,.09,16),m.timber,side*.51,.23,0);
+      wheel.rotation.z=Math.PI/2;g.add(wheel);
+    }
+    return g;
+  }
   const g=new T.Group();
   const armyMat=new T.MeshStandardMaterial({color,roughness:.73,metalness:.12});
   const jacket=new T.MeshStandardMaterial({color:0xddd7c7,roughness:.9});
@@ -164,6 +199,12 @@ function army(T,color,count,compact=false){
     column(T,g,.10,.40,jacket,x,.5,z,8);
     sphere(T,g,.135,helmet,x,.79,z);
     const boot=column(T,g,.12,.08,armyMat,x,.28,z,8);boot.castShadow=false;
+  }
+  if(type==='recon'){
+    const antenna=column(T,g,.025,1.02,m.ink,.43,.79,-.22,8);
+    sphere(T,g,.07,m.gold,.43,1.31,-.22);
+    const scope=mesh(T,new T.CylinderGeometry(.06,.06,.23,10),m.glass,.02,.76,.02);
+    scope.rotation.x=Math.PI/2;g.add(scope);
   }
   column(T,g,.032,.8,helmet,.47,.68,.02,6);
   const flag=mesh(T,new T.PlaneGeometry(.33,.2),armyMat,.61,1.02,.02);
