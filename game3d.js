@@ -12,7 +12,7 @@ function boot(){
  const targetMarker=new T.Mesh(new T.RingGeometry(.7,.94,36),new T.MeshBasicMaterial({color:0xeac978,side:T.DoubleSide,transparent:true,opacity:.9,depthTest:false}));
  targetMarker.rotation.x=-Math.PI/2;targetMarker.position.y=.29;targetMarker.visible=false;scene.add(targetMarker);
  const defs={
- farm:{name:'Farm',cost:{gold:80,wood:35},food:28},housing:{name:'Housing',cost:{gold:100,wood:70},pop:220},mine:{name:'Mine',cost:{gold:120,wood:55,iron:10},iron:16},factory:{name:'Factory',cost:{gold:180,wood:100,iron:30},gold:18},research:{name:'Research Center',cost:{gold:150,wood:70,iron:20},science:12},military:{name:'Military Base',cost:{gold:160,wood:80,iron:35},food:-4,troops:3},market:{name:'Market',cost:{gold:110,wood:60},gold:30},hospital:{name:'Hospital',cost:{gold:140,wood:80,iron:20},pop:120,science:2},refinery:{name:'Oil Refinery',cost:{gold:225,wood:95,iron:45},oil:14,gold:-3}};
+ farm:{name:'Farm',cost:{gold:80,wood:35},food:28},housing:{name:'Housing',cost:{gold:100,wood:70},pop:220},mine:{name:'Mine',cost:{gold:120,wood:55,iron:10},iron:16},factory:{name:'Factory',cost:{gold:180,wood:100,iron:30},gold:18},research:{name:'Research Center',cost:{gold:150,wood:70,iron:20},science:12},military:{name:'Military Barracks',cost:{gold:160,wood:80,iron:35},food:-4},market:{name:'Market',cost:{gold:110,wood:60},gold:30},hospital:{name:'Hospital',cost:{gold:140,wood:80,iron:20},pop:120,science:2},refinery:{name:'Oil Refinery',cost:{gold:225,wood:95,iron:45},oil:14,gold:-3}};
  const cam=window.NationWarsCamera.create({camera,renderer,initial:{x:-15,z:15,yaw:.35,pitch:.91,zoom:39},bounds:34,buttons:{zoomIn:'zoomIn',zoomOut:'zoomOut',reset:'resetView'}});
  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),pos=(x,z)=>new T.Vector3((x-H+.5)*TILE,0,(z-H+.5)*TILE),key=(x,z)=>x+'-'+z;
  function tilePoint(p){const x=Math.floor(p.x/TILE+H),z=Math.floor(p.z/TILE+H);return x>=0&&z>=0&&x<MAP&&z<MAP?{x,z}:null}
@@ -220,9 +220,19 @@ function boot(){
      if(!plot||plot.type!=='military'||!own(plot.x,plot.z)){supplyLines.delete(id);continue}
      if(alive('player').length>=systems.PLAYER_CAP)continue;
      const spot=freeSpawn(plot);if(!spot)continue;
-     const ghost={userData:{x:spot.x,z:spot.z,type:line.type}};
+     if(!own(line.rally.x,line.rally.z))continue;
+     // Each shipment needs a free friendly delivery space. Once the rally tile
+     // is occupied, use the nearest available friendly neighboring tile.
+     let delivery=null;
+     for(let radius=0;radius<=3&&!delivery;radius++)for(let dx=-radius;dx<=radius&&!delivery;dx++)for(let dz=-radius;dz<=radius;dz++){
+       const x=line.rally.x+dx,z=line.rally.z+dz;
+       if(x<0||z<0||x>=MAP||z>=MAP||!own(x,z)||occupied(x,z)||x===spot.x&&z===spot.z)continue;
+       delivery={x,z};
+       break;
+     }
+     if(!delivery)continue;
      const blocked=new Set(armies.filter(a=>a.userData.count>0).map(a=>a.userData.x+','+a.userData.z));
-     const path=routeFinder.route({start:spot,goal:line.rally,size:MAP,blocked});
+     const path=routeFinder.route({start:spot,goal:delivery,size:MAP,blocked});
      if(!path)continue;
      const training=systems.trainingCost(line.type,true);
      const fare=systems.travelQuote(line.type,path.length,{gold:gold-(training.gold||0),oil:oil-(training.oil||0)});
