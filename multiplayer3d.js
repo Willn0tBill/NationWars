@@ -1,10 +1,10 @@
 (()=>{'use strict';
-const SERVER=window.NW_SERVER_URL||new URLSearchParams(location.search).get('server')||'wss://nationwars.onrender.com/ws', $=id=>document.getElementById(id),mount=$('game');let T=window.THREE,scene,camera,renderer,ray,mouse,ws,state=null,myId=null,selected=null,drag=false,lx=0,ly=0,yaw=.15,pitch=.78,dist=34,retry=0;
+const SERVER=window.NW_SERVER_URL||new URLSearchParams(location.search).get('server')||'wss://nationwars.onrender.com/ws', $=id=>document.getElementById(id),mount=$('game');let T=window.THREE,scene,camera,renderer,ray,mouse,ws,state=null,myId=null,selected=null,drag=false,lx=0,ly=0,yaw=.15,pitch=.9,dist=43,retry=0;const art=window.NationWarsVisuals;let world=null;
 function status(x){$('status').textContent=x}function fail(x){status(x)}
-function start(){if(!T){fail('3D engine failed to load. Check your connection and refresh.');return}try{init()}catch(e){console.error(e);fail('3D multiplayer failed to start. Refresh the page.')}}
+function start(){if(!T||!art){fail('3D engine or visual assets did not load. Refresh the page.');return}try{init()}catch(e){console.error(e);fail('3D multiplayer failed to start. Refresh the page.')}}
 if(!T){status('Loading 3D engine…');let s=document.createElement('script');s.src='https://unpkg.com/three@0.160.0/build/three.min.js';s.onload=()=>{T=window.THREE;start()};s.onerror=()=>fail('Could not load the 3D engine.');document.head.appendChild(s)}else start();
 function init(){
- scene=new T.Scene();scene.background=new T.Color(0x07111d);scene.fog=new T.Fog(0x07111d,40,110);camera=new T.PerspectiveCamera(50,innerWidth/innerHeight,.1,180);renderer=new T.WebGLRenderer({antialias:false,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.35));renderer.setSize(innerWidth,innerHeight);renderer.outputColorSpace=T.SRGBColorSpace;renderer.domElement.style.touchAction='none';mount.replaceChildren(renderer.domElement);ray=new T.Raycaster();mouse=new T.Vector2();scene.add(new T.HemisphereLight(0xbddcff,0x172313,2.1));let sun=new T.DirectionalLight(0xffffff,2.5);sun.position.set(20,35,10);scene.add(sun);events();cameraUpdate();connect();loop()}
+ scene=new T.Scene();camera=new T.PerspectiveCamera(50,innerWidth/innerHeight,.1,220);renderer=new T.WebGLRenderer({antialias:false,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio||1,matchMedia('(pointer:coarse)').matches?1.1:1.5));renderer.setSize(innerWidth,innerHeight);renderer.domElement.style.touchAction='none';mount.replaceChildren(renderer.domElement);ray=new T.Raycaster();mouse=new T.Vector2();art.atmosphere(T,scene,renderer,true);events();cameraUpdate();connect();loop()}
  function connect(){if(ws&&ws.readyState===1)return;status(retry?'Reconnecting to multiplayer server…':'Connecting to multiplayer server…');try{ws=new WebSocket(SERVER)}catch(e){schedule();return}ws.onopen=()=>{retry=0;status('Connected. Create a room or join with a code.')};ws.onerror=()=>status('Server connection failed. Retrying…');ws.onclose=()=>{status('Disconnected. Retrying…');schedule()};ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}if(m.type==='error'){status(m.message||'Server error');return}if(m.type==='created'||m.type==='joined'){myId=m.you;$('roomOut').textContent=m.room;if($('lobbyRoom'))$('lobbyRoom').textContent=m.room;if($('readyLobby'))$('readyLobby').disabled=false;status('Room '+m.room+' ready. Share the code and ready up when everyone has joined.')}if(m.type==='lobby'){
   $('roomOut').textContent=m.room;
   if($('lobbyRoom'))$('lobbyRoom').textContent=m.room;
@@ -22,13 +22,98 @@ function init(){
   });
   scene.remove(root);
 }
-function draw(){if(!state)return;scene.children.filter(o=>o.userData&&o.userData.mapObject).forEach(disposeTree);let size=mapSize(),floor=new T.Mesh(new T.PlaneGeometry(size*2.5,size*2.5),new T.MeshLambertMaterial({color:0x21452f}));floor.rotation.x=-Math.PI/2;floor.userData.mapObject=true;floor.userData.ground=true;floor.userData.id='ground';scene.add(floor);let grid=new T.GridHelper(size*2.5,size,0x557b62,0x365342);grid.position.y=.02;grid.material.transparent=true;grid.material.opacity=.48;grid.userData.mapObject=true;scene.add(grid);
- Object.entries(state.tiles).forEach(([id,t])=>{let p=pof(id,size),pl=state.players.find(x=>x.id===t.owner),color=new T.Color(pl?pl.color:'#4b5a68');let tile=new T.Mesh(new T.BoxGeometry(2.28,.14,2.28),new T.MeshStandardMaterial({color,roughness:.85}));tile.position.set(p.x,.07,p.z);tile.userData={mapObject:true,id};scene.add(tile);if(t.troops>0){let g=new T.Group();g.position.set(p.x,0,p.z);g.userData={mapObject:true,id};let base=new T.Mesh(new T.CylinderGeometry(.48,.6,.2,8),new T.MeshStandardMaterial({color}));base.position.y=.2;g.add(base);for(let i=0;i<Math.min(9,Math.max(2,Math.ceil(t.troops/15)));i++){let u=new T.Mesh(new T.BoxGeometry(.22,.7,.22),new T.MeshStandardMaterial({color:0xe4edf5}));u.position.set((i%3-1)*.32,.57,(Math.floor(i/3)-1)*.32);g.add(u)}g.traverse(o=>{o.userData={mapObject:true,id}});scene.add(g)}});highlight()}
- function tileFrom(e){let r=renderer.domElement.getBoundingClientRect();mouse.x=(e.clientX-r.left)/r.width*2-1;mouse.y=-(e.clientY-r.top)/r.height*2+1;ray.setFromCamera(mouse,camera);for(let h of ray.intersectObjects(scene.children,true))if(h.object.userData.id&&h.object.userData.id!=='ground')return h.object.userData.id;return null}
+function createWorld(size){
+  if(world&&world.size===size)return world;
+  if(world){
+    for(const obj of world.objects)disposeTree(obj);
+    world=null;
+  }
+  const before=new Set(scene.children);
+  art.ground(T,scene,size,2.5);
+  const decorations=scene.children.filter(o=>!before.has(o));
+  const count=size*size, ids=[];
+  for(let r=0;r<size;r++)for(let c=0;c<size;c++)ids.push(r+'-'+c);
+  const tileMesh=new T.InstancedMesh(
+    art.roundedTileGeometry(T,2.5),
+    new T.MeshStandardMaterial({color:0xffffff,roughness:.88,metalness:.03}),
+    count
+  );
+  tileMesh.userData={instanceToId:ids};
+  tileMesh.castShadow=false;tileMesh.receiveShadow=true;
+  const platform=new T.InstancedMesh(
+    new T.CylinderGeometry(.49,.55,.13,16),
+    new T.MeshStandardMaterial({color:0xffffff,roughness:.78,metalness:.08}),
+    count
+  );
+  const bodies=new T.InstancedMesh(
+    new T.CapsuleGeometry(.115,.29,4,8),
+    new T.MeshStandardMaterial({color:0xffffff,roughness:.85}),
+    count*3
+  );
+  const heads=new T.InstancedMesh(
+    new T.SphereGeometry(.145,10,7),
+    new T.MeshStandardMaterial({color:0xffffff,roughness:.82}),
+    count*3
+  );
+  const towers=new T.InstancedMesh(
+    new T.ConeGeometry(.25,.4,5),
+    new T.MeshStandardMaterial({color:0xffffff,roughness:.86}),
+    count
+  );
+  for(const obj of [tileMesh,platform,bodies,heads,towers]){obj.frustumCulled=false;scene.add(obj)}
+  const ring=new T.Mesh(new T.RingGeometry(.87,1.03,48),new T.MeshBasicMaterial({color:0xffdc85,side:T.DoubleSide,transparent:true,opacity:.96}));
+  ring.rotation.x=-Math.PI/2;ring.position.y=.32;ring.visible=false;scene.add(ring);
+  world={size,ids,tileMesh,platform,bodies,heads,towers,ring,objects:[...decorations,tileMesh,platform,bodies,heads,towers,ring]};
+  return world;
+}
+const tmp=new T.Object3D(),ownedColor=new T.Color(),uniformColor=new T.Color(),skyColor=new T.Color(0xe0e8df);
+function pose(inst,i,x,y,z,scale=1){
+  tmp.position.set(x,y,z);tmp.rotation.set(0,0,0);
+  tmp.scale.setScalar(scale);
+  tmp.updateMatrix();inst.setMatrixAt(i,tmp.matrix);
+}
+function draw(){
+  if(!state||!state.tiles)return;
+  const size=mapSize(),w=createWorld(size),players=new Map((state.players||[]).map(p=>[p.id,p]));
+  const neutral=new T.Color(0x749081);
+  for(let i=0;i<w.ids.length;i++){
+    const id=w.ids[i],t=state.tiles[id]||{owner:null,troops:0};
+    const p=pof(id,size),player=players.get(t.owner);
+    const color=player?new T.Color(player.color):neutral.clone();
+    if(player)color.lerp(skyColor,.14);
+    else color.offsetHSL((i%5-2)*.008,0,(i%7-3)*.008);
+    pose(w.tileMesh,i,p.x,.055,p.z);
+    w.tileMesh.setColorAt(i,color);
+    const active=(Number(t.troops)||0)>0;
+    pose(w.platform,i,p.x,.25,p.z,active?1:.0001);
+    w.platform.setColorAt(i,player?new T.Color(player.color):new T.Color(0xa5ad9b));
+    const n=active?Math.min(3,Math.max(1,Math.floor(t.troops/15)+1)):0;
+    for(let j=0;j<3;j++){
+      const instance=i*3+j,visible=j<n;
+      const angle=j*Math.PI*2/3-.45,x=p.x+Math.cos(angle)*.23,z=p.z+Math.sin(angle)*.23;
+      pose(w.bodies,instance,x,.58,z,visible?1:.0001);
+      pose(w.heads,instance,x,.88,z,visible?1:.0001);
+      w.bodies.setColorAt(instance,player?new T.Color(player.color).lerp(skyColor,.43):new T.Color(0xaeb9ad));
+      w.heads.setColorAt(instance,player?new T.Color(0x273c46):new T.Color(0x6b7971));
+    }
+    pose(w.towers,i,p.x+.60,.51,p.z-.55,player?1:.0001);
+    w.towers.setColorAt(i,player?new T.Color(player.color):neutral);
+  }
+  for(const inst of [w.tileMesh,w.platform,w.bodies,w.heads,w.towers]){
+    inst.instanceMatrix.needsUpdate=true;
+    if(inst.instanceColor)inst.instanceColor.needsUpdate=true;
+  }
+  highlight();
+}
+ function tileFrom(e){let r=renderer.domElement.getBoundingClientRect();mouse.x=(e.clientX-r.left)/r.width*2-1;mouse.y=-(e.clientY-r.top)/r.height*2+1;ray.setFromCamera(mouse,camera);for(const h of ray.intersectObjects(scene.children,true)){if(h.object.userData.instanceToId&&Number.isInteger(h.instanceId))return h.object.userData.instanceToId[h.instanceId];if(h.object.userData.id&&h.object.userData.id!=='ground')return h.object.userData.id;}return null}
  function adjacent(a,b){let [ar,ac]=a.split('-').map(Number),[br,bc]=b.split('-').map(Number);if(Math.abs(ar-br)>1)return false;if(ar===br)return Math.abs(ac-bc)===1;let allowed=(ar%2===0)?[ac-1,ac]:[ac,ac+1];return Math.abs(ar-br)===1&&allowed.includes(bc)}
  function click(e){if(drag){drag=false;return}if(!state)return;let id=tileFrom(e);if(!id||!state.tiles[id])return;let t=state.tiles[id];if(t.owner===myId){selected=id;$('selected').textContent=`Selected territory ${id} · ${t.troops} troops`;$('help').textContent='Right-click an adjacent territory to move or attack.';highlight()}else if(selected)order(id)}
  function order(to){let from=selected,t=state.tiles[from];if(!t||t.owner!==myId)return;if(!adjacent(from,to)){$('help').textContent='That territory is not adjacent.';return}if(t.troops<2){$('help').textContent='This territory needs more troops before moving.';return}let amount=Math.max(1,Math.floor(t.troops*.6));send({type:'action',from,to,amount});$('help').textContent='Order sent. Waiting for server update.'}
- function highlight(){scene.children.filter(o=>o.userData&&o.userData.selection).forEach(disposeTree);if(!selected)return;let id=selected,size=mapSize(),p=pof(id,size),r=new T.Mesh(new T.RingGeometry(.75,.93,24),new T.MeshBasicMaterial({color:0x72c5ff,side:T.DoubleSide,transparent:true,opacity:.95}));r.rotation.x=-Math.PI/2;r.position.set(p.x,.16,p.z);r.userData.selection=true;scene.add(r)}
+ function highlight(){
+  if(!world)return;
+  world.ring.visible=!!selected&&!!state?.tiles?.[selected];
+  if(world.ring.visible){const p=pof(selected,world.size);world.ring.position.set(p.x,.32,p.z)}
+ }
  function hud(){if(!state)return;let mine=Object.values(state.tiles).filter(t=>t.owner===myId);$('territory').textContent=mine.length;$('troops').textContent=mine.reduce((s,t)=>s+t.troops,0);let sec=state.time||0;$('time').textContent=String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0');if(selected&&!state.tiles[selected]){selected=null;$('selected').textContent='Select one of your territories.'}}
  function cameraUpdate(){let h=Math.cos(pitch)*dist;camera.position.set(Math.sin(yaw)*h,Math.sin(pitch)*dist,Math.cos(yaw)*h);camera.lookAt(0,0,0)}
  function events(){
