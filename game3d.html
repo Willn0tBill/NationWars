@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Nation Wars — 3D Nation Builder</title>
+<title>Nation Wars — 3D Nation Builder · Campaign Update</title>
 <style>
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07111d;color:#eef6ff;font-family:Inter,system-ui,sans-serif}#game{position:fixed;inset:0}canvas{display:block}.hud{position:fixed;inset:0;pointer-events:none}.top{position:absolute;top:12px;left:12px;right:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.brand,.stat,.panel{background:rgba(7,17,29,.9);border:1px solid rgba(140,185,220,.28);box-shadow:0 10px 28px #0006;backdrop-filter:blur(7px);border-radius:12px}.brand{padding:10px 14px;font-weight:900;letter-spacing:.08em}.brand span{color:#55b7ff}.stat{padding:8px 11px;font-size:12px}.stat b{color:#fff}.side{position:absolute;right:12px;top:72px;width:275px;padding:14px;pointer-events:auto;max-height:calc(100vh - 90px);overflow:auto}.panel h2{font-size:15px;margin:0 0 8px}.panel h3{font-size:12px;margin:14px 0 6px;color:#72c5ff;text-transform:uppercase;letter-spacing:.08em}.panel p{font-size:12px;color:#aec6dc;line-height:1.45;margin:6px 0}.selected{color:#72c5ff}.btn{width:100%;border:0;border-radius:8px;padding:9px;margin-top:6px;background:#267bc1;color:#fff;font-weight:800;cursor:pointer}.btn:hover{filter:brightness(1.12)}.btn:disabled{opacity:.4;cursor:not-allowed}.btn.secondary{background:#193149}.buildgrid{display:grid;grid-template-columns:1fr 1fr;gap:5px}.buildgrid .btn{margin:0;font-size:11px}.bottom{position:absolute;left:12px;bottom:12px;max-width:560px;padding:10px 13px;color:#b9d1e8;font-size:11px}.loading{position:fixed;inset:0;display:grid;place-items:center;background:#07111d;z-index:5;font-weight:800}.hidden{display:none!important}@media(max-width:700px){.side{left:12px;right:12px;top:auto;bottom:58px;width:auto;max-height:48vh}.bottom{display:none}.stat{font-size:11px}}
 
@@ -56,12 +56,55 @@ body{background:#8baeb9}
 .squad-hint{font-size:11px!important;color:#b6d7c3!important;line-height:1.5!important;margin:7px 0 14px!important}
 .side #orders{color:#d2eada;min-height:3.5em}
 @media(max-width:700px){.side{max-height:56dvh!important}.squad-actions>.btn{min-height:44px!important}}
+
+/* 0.7 campaign economy and command panel */
+.top{max-width:calc(100vw - 30px);row-gap:6px!important}
+.top .stat{white-space:nowrap}
+.side{top:94px!important;max-height:calc(100dvh - 109px)!important;width:310px!important;padding:16px!important}
+.side>.btn,.economy-section>.btn{min-height:42px}
+.economy-section{border-top:1px solid rgba(140,199,202,.22);padding-top:10px;margin-top:15px}
+.economy-section h3{font-size:12px!important;letter-spacing:.07em;margin:14px 0 8px!important}
+.economy-help{font-size:11px!important;line-height:1.55!important;color:#c1d8d9!important}
+.play-badge{font-size:9px;vertical-align:middle;letter-spacing:.06em;color:#d3f3c4;border:1px solid #58796e;border-radius:999px;padding:3px 6px}
+.control-label{display:block;margin:13px 0 5px;color:#b9dce7;font-size:11px;font-weight:750}
+.nw-select{display:block;width:100%;max-width:100%;padding:11px;background:#0a2736;border:1px solid #3b6d81;border-radius:9px;color:#fff;font:inherit;font-size:12px}
+.unit-cost{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin:10px 0;font-size:10px;color:#a8c5d4}
+.unit-cost strong{color:#f4d48e;text-align:right}
+.supply-controls{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.supply-controls>.btn{min-width:0;font-size:11px;margin:0;padding:9px 5px}
+.fuel-stat b{color:#f4d589!important}.war-stat b{color:#a1efd5!important}
+@media(max-width:700px){
+.top{gap:4px!important}.top .stat{font-size:10px!important;padding:5px 7px!important}
+.side{left:8px!important;right:8px!important;top:auto!important;bottom:max(8px,env(safe-area-inset-bottom))!important;width:auto!important;max-height:58dvh!important;padding:13px!important}
+.buildgrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.buildgrid .btn{font-size:10px!important;min-height:36px!important;padding:6px 3px}
+}
+@media(max-height:650px) and (min-width:701px){.side{top:65px!important;max-height:calc(100dvh - 78px)!important}}
 </style>
 </head>
 <body>
 <div id="loading" class="loading">Loading Nation Wars 3D…</div><div id="game"></div>
-<div class="hud"><div class="top"><div class="brand">NATION <span>WARS</span> 3D</div><div class="stat">Gold <b id="gold">1,000</b></div><div class="stat">Food <b id="food">800</b></div><div class="stat">Wood <b id="wood">300</b></div><div class="stat">Iron <b id="iron">150</b></div><div class="stat">Science <b id="science">0</b></div><div class="stat">Population <b id="population">2,500</b></div></div>
-<div class="side panel"><h2>Nation Command</h2><p id="selection">Select a squad or a development plot.</p><p id="orders" role="status" aria-live="polite">Select a blue squad, then click or tap any destination to move. You can march across multiple tiles.</p><div class="squad-actions" role="group" aria-label="Squad commands"><button class="btn btn-move" id="moveOrder" type="button" disabled>➤ Move / Attack</button><button class="btn secondary" id="split" type="button" disabled>Split Squad</button><button class="btn secondary" id="cancelOrder" type="button" disabled>Cancel</button></div><p class="squad-hint">Select a squad → click a destination to march. Choose an enemy squad to approach and attack. Use Cancel to select plots and build.</p><h3>Selected Plot</h3><p id="plotInfo">No plot selected.</p><div class="buildgrid"><button class="btn" data-build="farm">Farm</button><button class="btn" data-build="housing">Housing</button><button class="btn" data-build="mine">Mine</button><button class="btn" data-build="factory">Factory</button><button class="btn" data-build="research">Research</button><button class="btn" data-build="military">Military</button><button class="btn" data-build="market">Market</button><button class="btn" data-build="hospital">Hospital</button></div><button class="btn secondary" id="reset">Restart Nation</button><a class="btn secondary" href="index.html" style="display:block;text-align:center;text-decoration:none">Back to Nation Wars</a></div>
+<div class="hud"><div class="top"><div class="brand">NATION <span>WARS</span> 3D</div><div class="stat">Gold <b id="gold">1,000</b></div><div class="stat">Food <b id="food">800</b></div><div class="stat">Wood <b id="wood">300</b></div><div class="stat">Iron <b id="iron">150</b></div><div class="stat fuel-stat">Oil <b id="oil">145</b></div><div class="stat">Science <b id="science">0</b></div><div class="stat">Population <b id="population">2,500</b></div>
+  <div class="stat war-stat">Territory <b id="territoryCount">56</b></div><div class="stat war-stat">Enemy units <b id="enemyCount">3</b></div><div class="stat war-stat">Next wave <b id="waveClock">22s</b></div></div>
+<div class="side panel"><h2>Nation Command <span class="play-badge">CAMPAIGN</span></h2><p id="selection">Select a squad or a development plot.</p><p id="orders" role="status" aria-live="polite">Select a blue squad, then click or tap any destination to move. You can march across multiple tiles.</p><div class="squad-actions" role="group" aria-label="Squad commands"><button class="btn btn-move" id="moveOrder" type="button" disabled>➤ Move / Attack</button><button class="btn secondary" id="split" type="button" disabled>Split Squad</button><button class="btn secondary" id="cancelOrder" type="button" disabled>Cancel</button></div><p class="squad-hint">Select a squad → click a destination to march. Choose an enemy squad to approach and attack. Use Cancel to select plots and build.</p><h3>Selected Plot</h3><p id="plotInfo">No plot selected.</p><div class="buildgrid"><button class="btn" data-build="farm">Farm</button><button class="btn" data-build="housing">Housing</button><button class="btn" data-build="mine">Mine</button><button class="btn" data-build="factory">Factory</button><button class="btn" data-build="research">Research</button><button class="btn" data-build="military">Barracks</button><button class="btn" data-build="market">Market</button><button class="btn" data-build="hospital">Hospital</button><button class="btn" data-build="refinery">Oil Refinery</button></div>
+<section id="trainingSection" class="economy-section" aria-label="Barracks and automated logistics">
+<h3>Military Barracks</h3><p class="economy-help">Troops must be trained at your barracks. Choose a barracks tile or jump to your first one.</p>
+<button id="barracksSelect" type="button" class="btn secondary">Select Barracks</button>
+<label class="control-label" for="trainUnit">Unit class</label>
+<select id="trainUnit" class="nw-select">
+<option value="infantry">Infantry · 30 soldiers</option><option value="recon">Recon · 18 scouts</option>
+<option value="armor">Armor · 12 vehicles</option><option value="artillery">Artillery · 10 units</option>
+</select>
+<div class="unit-cost"><span>Manual training cost</span><strong id="trainCost">75 cash · 24 food</strong></div>
+<button id="recruitBtn" type="button" class="btn" disabled>Train Unit</button>
+<h3>Automated Supply Lines</h3>
+<p class="economy-help" id="automationInfo">Requires 70 territories, 30 science, and two barracks.</p>
+<p class="economy-help">Automatic training costs <b>2× the manual price</b>. Each shipment also pays oil or cash for travel, every 12 seconds.</p>
+<div class="supply-controls"><button id="setRally" class="btn secondary" type="button" disabled>Set Rally Tile</button><button id="supplyToggle" class="btn" type="button" disabled>Enable Supply Line</button></div>
+<p class="economy-help" id="supplyStatus">Select a barracks to configure a supply line.</p>
+<p class="economy-help">Active lines: <b id="supplyCount">0</b></p>
+</section>
+<button class="btn secondary" id="reset">Restart Nation</button><a class="btn secondary" href="index.html" style="display:block;text-align:center;text-decoration:none">Back to Nation Wars</a></div>
 <div class="bottom panel"><span class="selected">Controls:</span> Click squad → click destination = move/attack · Right-click also orders · WASD = pan · Shift + drag or right drag = orbit · Middle/touch drag = pan · Wheel/pinch = zoom · Q/E = rotate · Home = reset camera · <b>R</b> = restart. Select an empty plot to build on it.</div></div>
-<div class="camera-tools" role="group" aria-label="Camera controls"><span class="camera-tools-label">Camera</span><button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in">+</button><button id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out">−</button><button id="resetView" type="button" aria-label="Reset camera" title="Reset camera (Home)">Reset view</button></div><script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script><script src="visuals3d.js?v=20261026-rtspolish"></script><script src="camera3d.js?v=20261026-cam06"></script><script src="army-orders.js?v=20261026-orders07"></script><script src="game3d.js?v=20261026-orders07"></script>
+<div class="camera-tools" role="group" aria-label="Camera controls"><span class="camera-tools-label">Camera</span><button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in">+</button><button id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out">−</button><button id="resetView" type="button" aria-label="Reset camera" title="Reset camera (Home)">Reset view</button></div><script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script><script src="visuals3d.js?v=20261026-rtspolish"></script><script src="camera3d.js?v=20261026-cam06"></script><script src="army-orders.js?v=20261026-orders07"></script><script src="nation-systems.js?v=campaign07"></script><script src="game3d.js?v=campaign07"></script>
 </body></html>
