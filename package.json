@@ -2,7 +2,7 @@
   "name": "nation-wars",
   "version": "0.4.0",
   "private": true,
-  "description": "Nation Wars multiplayer strategy game server",
+  "description": "Nation Wars — Wtv Innovations strategy game prototype with multiplayer server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
